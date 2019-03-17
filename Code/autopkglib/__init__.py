@@ -124,6 +124,26 @@ def get_pref_mac(key, domain=get_domain()):
 
 def get_pref_win(key, domain=get_domain()):
     """Return a single pref value (or None) from the Windows preferences."""
+    try:		
+        if key == "RECIPE_REPOS":
+            value = {}
+            new_domain = os.path.join(domain, key)
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                new_domain
+            )
+            i = 0
+            while True:
+                try:
+                    (key_path, url_value, type) = _winreg.EnumValue(reg_key, i)
+                    value[key_path] = {'URL': url_value}
+                    i += 1
+                except WindowsError:
+                    break
+            return value
+    except WindowsError as e:
+            # If we can't access the registry key, assume None
+            return None	
     try:
         reg_key = _winreg.OpenKey(
             _winreg.HKEY_CURRENT_USER,

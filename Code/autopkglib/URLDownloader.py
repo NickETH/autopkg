@@ -67,8 +67,9 @@ def default_curl_path():
     if is_mac():
         return '/usr/bin/curl'
     if is_windows():
-        return "C:\Program Files\curl\i386\curl.exe"
-
+        return "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
+        # we use the curl, which comes with git.
+        # we should consider to use the CURL_PATH variable here.
 
 class URLDownloader(Processor):
     """Downloads a URL to the specified download_dir using curl."""

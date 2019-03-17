@@ -760,6 +760,9 @@ def repo_delete(argv):
             recipe_search_dirs.remove(repo_path)
         # now remove the repo files
         try:
+            if is_windows():
+                # we need to remove readonly, hidden and system bits
+                os.system('attrib.exe -r -h -s ' + repo_path + '\\*.* /S /D')
             shutil.rmtree(repo_path)
         except (OSError, IOError), err:
             log_err("ERROR: Could not remove %s: %s" % (repo_path, err))

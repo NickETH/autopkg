@@ -13,8 +13,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# 20190328 Nick Heim: Checks divided into status and certificate. JSON had errors in reading bigger cert trees at full size.
+
 """See docstring for WindowsSignatureVerifier class"""
 
+import sys
 import os.path
 import subprocess
 import re
@@ -73,36 +76,30 @@ class WindowsSignatureVerifier(DmgMounter):
                         "run.")
             return
         input_path = self.env['input_path']
-
         powershell = "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
-        # Get authenticode information about the file
-        cmd = [
-            "Get-AuthenticodeSignature",
-            input_path,
-            "|",
-            "ConvertTo-Json",
-        ]
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=True,
-            executable=powershell
-        )
-        (out, err) = proc.communicate()
-        data = json.loads(out)
-        if (
-            data['Status'] != 0 or
-            data['SignerCertificate']['Subject'] != self.env['expected_subject']
-        ):
-            raise ProcessorError(
-                "Code signature mismatch! Expected %s but "
-                "received %s" % (
-                    self.env['expected_subject'],
-                    data['SignerCertificate']['Subject']
+        # Get cert status information from the file
+        cmd = [powershell, " & {(Get-AuthenticodeSignature " + input_path + ").Status}",]
+        sigstat = subprocess.check_output(cmd).rstrip()
+        # Get cert information from the file
+        if (sigstat == 'Valid'):
+            cmd = [powershell, " & {(Get-AuthenticodeSignature " + input_path + ").SignerCertificate|ConvertTo-Json}",]
+            out = subprocess.check_output(cmd)
+            # print >> sys.stdout, "Powershell out %s" % out
+            data = json.loads(out)
+            if (data['Subject'] != self.env['expected_subject']):
+                raise ProcessorError(
+                    "Code signature mismatch! Expected %s but "
+                    "received %s" % (
+                        self.env['expected_subject'],
+                        data['Subject']
+                    )
                 )
+        else:
+            raise ProcessorError(
+                "Code signature: not valid or not signed!"
+                "Signature Status %s" % (sigstat)
             )
-
+            		
 
 if __name__ == '__main__':
     PROCESSOR = WindowsSignatureVerifier()

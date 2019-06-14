@@ -13,15 +13,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# 20190328 Nick Heim: Adaption for Windows. Very basic so far. Looking for a better predicate class...
 """See docstring for StopProcessingIf class"""
 
-from autopkglib import Processor, ProcessorError
+from autopkglib import Processor, ProcessorError, is_mac, is_windows
+import sys
 
 #pylint: disable=no-name-in-module
-try:
-    from Foundation import NSPredicate
-except:
-    print "WARNING: Failed 'from Foundation import NSPredicate' in " + __name__
+if is_mac():
+    try:
+        from Foundation import NSPredicate
+    except:
+        print "WARNING: Failed 'from Foundation import NSPredicate' in " + __name__
+# elif is_windows():
+#    from pypred import Predicate, PredicateSet, OptimizedPredicateSet
+
 #pylint: disable=no-name-in-module
 
 __all__ = ["StopProcessingIf"]
@@ -47,17 +53,31 @@ class StopProcessingIf(Processor):
     }
 
     def predicate_evaluates_as_true(self, predicate_string):
-        '''Evaluates predicate against our environment dictionary'''
-        try:
-            predicate = NSPredicate.predicateWithFormat_(predicate_string)
-        except Exception, err:
-            raise ProcessorError(
-                "Predicate error for '%s': %s"
-                % (predicate_string, err))
+        if is_mac():
+            '''Evaluates predicate against our environment dictionary'''
+            try:
+                predicate = NSPredicate.predicateWithFormat_(predicate_string)
+            except Exception, err:
+                raise ProcessorError(
+                    "Predicate error for '%s': %s"
+                    % (predicate_string, err))
 
-        result = predicate.evaluateWithObject_(self.env)
-        self.output("(%s) is %s" % (predicate_string, result))
-        return result
+            result = predicate.evaluateWithObject_(self.env)
+            self.output("(%s) is %s" % (predicate_string, result))
+            return result
+
+        elif is_windows():
+            try:
+                download_changed = self.env.get('download_changed')
+                result = eval(predicate_string)
+                # print >> sys.stdout, "predicate %s" % result
+            except Exception, err:
+                raise ProcessorError(
+                    "Predicate error for '%s': %s"
+                    % (predicate_string, err))
+
+            self.output("(%s) is %s" % (predicate_string, result))
+            return result
 
     def main(self):
         self.env["stop_processing_recipe"] = (

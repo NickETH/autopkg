@@ -3,7 +3,7 @@ AutoPkg for Windows!
 
 Early, experimental Windows release is [here](https://github.com/NickETH/autopkg/tree/win).
 
-This became possible thanks to the fundamental work of [Nick McSpadden] (https://github.com/nmcspadden/autopkg/tree/win)!
+This became possible thanks to the fundamental work of [Nick McSpadden] (https://github.com/nmcspadden/autopkg/tree/win) !
 
 AutoPkg is an automation framework for macOS and now Windows! software packaging and distribution, oriented towards the tasks one would normally perform manually to prepare third-party software for mass deployment to managed clients.
 

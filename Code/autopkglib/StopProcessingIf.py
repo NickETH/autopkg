@@ -2,6 +2,10 @@
 #
 # Copyright 2013 Greg Neagle
 #
+# Inital Windows support by Nick McSpadden, 2018
+# 
+# Port to actual level. Adapt the CURL path for Windows. Sept 2019, Nick Heim
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,7 +21,6 @@
 """See docstring for StopProcessingIf class"""
 
 from autopkglib import Processor, ProcessorError, log, is_mac, is_windows
-import sys
 
 # pylint: disable=no-name-in-module
 if is_mac():
@@ -26,7 +29,6 @@ if is_mac():
     except:
         log("WARNING: Failed 'from Foundation import NSPredicate' in " + __name__)
 # pylint: disable=no-name-in-module
-
 
 __all__ = ["StopProcessingIf"]
 
@@ -55,11 +57,13 @@ class StopProcessingIf(Processor):
     def predicate_evaluates_as_true(self, predicate_string):
         if is_mac():
             """Evaluates predicate against our environment dictionary"""
+
             try:
                 predicate = NSPredicate.predicateWithFormat_(predicate_string)
             except Exception as err:
                 raise ProcessorError(
                     "Predicate error for '%s': %s" % (predicate_string, err)
+
                     )
 
             result = predicate.evaluateWithObject_(self.env)
@@ -78,8 +82,6 @@ class StopProcessingIf(Processor):
 
             self.output("(%s) is %s" % (predicate_string, result))
             return result
-
-
     def main(self):
         self.env["stop_processing_recipe"] = self.predicate_evaluates_as_true(
             self.env["predicate"]

@@ -49,6 +49,7 @@ def getxattr(pathname, attr):
     if is_mac():
         if attr in xattr.listxattr(pathname):
             return xattr.getxattr(pathname, attr)
+
         return None
     if is_windows():
         handler = pyads.ADS(pathname)
@@ -154,7 +155,7 @@ class URLDownloader(Processor):
     }
 
     def main(self):
-        #if not is_mac():
+        # if not is_mac():
         #    raise ProcessorError("This processor is Mac-only!")
         # clear any pre-exising summary result
         if "url_downloader_summary_result" in self.env:
@@ -201,7 +202,6 @@ class URLDownloader(Processor):
         # the webserver.
         if is_mac():
             os.chmod(pathname_temporary, 0o644)
-
         # construct curl command.
         curl_cmd = [
             self.env["CURL_PATH"],
@@ -334,7 +334,6 @@ class URLDownloader(Processor):
         # to move the file or otherwise manipulate it.
         if is_windows():
             temporary_file.close()
-
         # If Content-Length header is present and we had a cached
         # file, see if it matches the size of the cached file.
         # Useful for webservers that don't provide Last-Modified
@@ -399,6 +398,7 @@ class URLDownloader(Processor):
             "summary_text": "The following new items were downloaded:",
             "data": {"download_path": pathname},
         }
+
 
 if __name__ == "__main__":
     PROCESSOR = URLDownloader()

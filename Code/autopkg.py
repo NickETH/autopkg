@@ -18,6 +18,7 @@ related tasks"""
 
 from __future__ import print_function
 
+import copy
 import difflib
 import glob
 import hashlib
@@ -36,8 +37,6 @@ from urllib import quote
 from urlparse import urlparse
 
 import autopkglib.github
-from autopkglib import is_mac, is_windows
-
 from autopkglib import (
     AutoPackager,
     AutoPackagerError,
@@ -50,12 +49,13 @@ from autopkglib import (
     get_identifier,
     get_pref,
     get_processor,
+    globalPreferences,
+    is_mac,
     log,
     log_err,
     processor_names,
     set_pref,
     version_equal_or_greater,
-	is_mac, 
 	is_windows
 )
 
@@ -89,12 +89,16 @@ def print_version(argv):
 def gen_common_parser():
     """Generate a common optparse parser with default options."""
     parser = optparse.OptionParser()
+    parser.add_option("--prefs", dest="file_path")
     return parser
 
 
 def common_parse(parser, argv):
     """Parse an optparse parser with some enhancements and return a tuple."""
     options, arguments = parser.parse_args(argv[2:])
+    if options.file_path:
+        # Attempt to set the global preferences
+        globalPreferences.read_file(options.file_path)
     return (options, arguments)
 
 
@@ -667,7 +671,6 @@ def get_search_dirs():
     default = [".", "~/Library/AutoPkg/Recipes", "/Library/AutoPkg/Recipes"]
     if is_windows():
         default = [".", "%APPDATA%\AutoPkg\Recipes", "%ALLUSERSPROFILE%\AutoPkg\Recipes"]
-
     dirs = get_pref("RECIPE_SEARCH_DIRS")
     if isinstance(dirs, basestring):
         # convert a string to a list
@@ -2279,8 +2282,8 @@ def run_recipes(argv):
 
         log("Processing %s..." % recipe_path)
 
-        # Obtain prefs from the defaults domain
-        prefs = get_all_prefs()
+        # Create a local copy of preferences
+        prefs = copy.deepcopy(dict(get_all_prefs()))
         # Add RECIPE_PATH and RECIPE_DIR variables for use by processors
         prefs["RECIPE_PATH"] = os.path.abspath(recipe["RECIPE_PATH"])
         prefs["RECIPE_DIR"] = os.path.dirname(prefs["RECIPE_PATH"])

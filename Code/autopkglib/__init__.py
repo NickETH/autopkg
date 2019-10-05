@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import glob
 import imp
+import json
 import os
 import platform
 import pprint
@@ -28,7 +29,7 @@ import subprocess
 import sys
 from distutils.version import LooseVersion
 
-
+# import FoundationPlist
 
 
 class memoize(dict):
@@ -46,19 +47,19 @@ class memoize(dict):
         return result
 
 
-@memoize
+# @memoize
 def is_mac():
     """Return True if current OS is macOS."""
     return "Darwin" in platform.platform()
 
 
-@memoize
+# @memoize
 def is_windows():
     """Return True if current OS is Windows."""
     return "Windows" in platform.platform()
 
 
-@memoize
+# @memoize
 def is_linux():
     """Return True if current OS is Linux."""
     return "Linux" in platform.platform()
@@ -79,6 +80,7 @@ if is_mac():
         kCFPreferencesCurrentUser,
         kCFPreferencesCurrentHost,
         )
+        from PyObjCTools import Conversion
     except:
         print(
         "WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
@@ -101,242 +103,313 @@ BUNDLE_REG = "Software\AutoPkg"
 
 RE_KEYREF = re.compile(r"%(?P<key>[a-zA-Z_][a-zA-Z_0-9]*)%")
 
+
 class PreferenceError(Exception):
     """Preference exception"""
 
     pass
 
-@memoize
-def get_domain():
-    """Return the preference domain based on platform."""
-    if is_mac():
-        return BUNDLE_ID
-    elif is_windows():
-        return BUNDLE_REG
-def get_pref(key, domain=get_domain()):
-    """Return a single pref value (or None) for a domain."""
-    if is_mac():
-        return get_pref_mac(key, domain)
-    if is_windows():
-        return get_pref_win(key, domain)
-def get_pref_mac(key, domain=get_domain()):
-    """Return a single pref value (or None) for a domain."""
-    value = CFPreferencesCopyAppValue(key, domain)
-    # Casting NSArrays and NSDictionaries to native Python types.
-    # This a workaround for 10.6, where PyObjC doesn't seem to
-    # support as many common operations such as list concatenation
-    # between Python and ObjC objects.
-    if isinstance(value, NSArray):
-        value = list(value)
-    elif isinstance(value, NSDictionary):
-        value = dict(value)
-    return value
 
+class Preferences(object):
+    """An abstraction to hold all preferences."""
 
-def get_pref_win(key, domain=get_domain()):
-    """Return a single pref value (or None) from the Windows preferences."""
-    try:		
-        if key == "RECIPE_REPOS":
-            value = {}
-            new_domain = os.path.join(domain, key)
+    def __init__(self):
+        """Init."""
+        self.prefs = {}
+        # What type of preferences input are we using?
+        self.type = None
+        # Path to the preferences file we were given
+        self.file_path = None
+        # If we're on macOS, read in the preference domain first.
+        if is_mac():
+            self.prefs = self._get_macos_prefs()
+        # If we're on Windows, read the registry key first.
+        if is_windows():
+            self.prefs = self._get_windows_prefs(BUNDLE_REG)
+
+    def _parse_json_or_plist_file(self, file_path):
+        """Parse the file. Start with plist, then JSON."""
+        try:
+            data = FoundationPlist.readPlist(file_path)
+            self.type = "plist"
+            self.file_path = file_path
+            return Conversion.pythonCollectionFromPropertyList(data)
+        except Exception:
+            pass
+        try:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+                self.type = "json"
+                self.file_path = file_path
+                return data
+        except Exception:
+            pass
+        return {}
+
+    def _get_macos_pref(self, key):
+        """Get a specific macOS preference key."""
+        value = CFPreferencesCopyAppValue(key, BUNDLE_ID)
+        # Casting NSArrays and NSDictionaries to native Python types.
+        # This a workaround for 10.6, where PyObjC doesn't seem to
+        # support as many common operations such as list concatenation
+        # between Python and ObjC objects.
+        if isinstance(value, NSArray) or isinstance(value, NSDictionary):
+            value = Conversion.pythonCollectionFromPropertyList(value)
+        return value
+
+    def _get_macos_prefs(self):
+        """Return a dict (or an empty dict) with the contents of all
+        preferences in the domain."""
+        prefs = {}
+
+        # get keys stored via 'defaults write [domain]'
+        user_keylist = CFPreferencesCopyKeyList(
+            BUNDLE_ID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+        )
+
+        # get keys stored via 'defaults write /Library/Preferences/[domain]'
+        system_keylist = CFPreferencesCopyKeyList(
+            BUNDLE_ID, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
+        )
+
+        # CFPreferencesCopyAppValue() in get_macos_pref() will handle returning the
+        # appropriate value using the search order, so merging prefs in order
+        # here isn't necessary
+        for keylist in [system_keylist, user_keylist]:
+            if keylist:
+                for key in keylist:
+                    prefs[key] = self._get_macos_pref(key)
+        return prefs
+
+    def _get_windows_pref(self, key):
+        """Return a single pref value (or None) from the Windows preferences."""
+        try:		
+            if key == "RECIPE_REPOS":
+                value = {}
+                new_domain = os.path.join(BUNDLE_REG, key)
+                reg_key = _winreg.OpenKey(
+                    _winreg.HKEY_CURRENT_USER,
+                    new_domain
+                )
+                i = 0
+                while True:
+                    try:
+                        (key_path, url_value, type) = _winreg.EnumValue(reg_key, i)
+                        value[key_path] = {'URL': url_value}
+                        i += 1
+                    except WindowsError:
+                        break
+                return value
+        except WindowsError as e:
+                # If we can't access the registry key, assume None
+                return None	
+        try:
             reg_key = _winreg.OpenKey(
                 _winreg.HKEY_CURRENT_USER,
-                new_domain
+                BUNDLE_REG
+            )
+            raw_value = _winreg.QueryValueEx(reg_key, key)[0]
+            _winreg.CloseKey(reg_key)
+            # Check for expansions in here
+            if isinstance(raw_value, list):
+                value = []
+                # We have to expand each of the inside values
+                for val in raw_value:
+                    value.append(os.path.expandvars(val))
+            elif isinstance(raw_value, basestring):
+                # Strings can be freely expanded, even if they don't contain
+                # expansion variables
+                value = os.path.expandvars(raw_value)
+            else:
+                # Probably an int or bool
+                value = raw_value
+            return value
+        except WindowsError as e:
+            # If we can't access the registry key, assume None
+            return None
+
+    def _get_windows_prefs(self, regpath):
+        """Get all preferences from the AutoPkg registry key."""
+        # Create a dictionary of a registry key.
+        reg_dict = {}
+        try:
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                regpath
             )
             i = 0
             while True:
+                # We'll index each subkey one at a time
                 try:
-                    (key_path, url_value, type) = _winreg.EnumValue(reg_key, i)
-                    value[key_path] = {'URL': url_value}
+                    (keyname, value, type) = _winreg.EnumValue(reg_key, i)
+                    reg_dict[keyname] = value
                     i += 1
                 except WindowsError:
+                    # We've run out of subkeys to index
                     break
-            return value
-    except WindowsError as e:
-            # If we can't access the registry key, assume None
-            return None	
-    try:
-        reg_key = _winreg.OpenKey(
-            _winreg.HKEY_CURRENT_USER,
-            domain
-        )
-        raw_value = _winreg.QueryValueEx(reg_key, key)[0]
-        _winreg.CloseKey(reg_key)
-        # Check for expansions in here
-        if isinstance(raw_value, list):
-            value = []
-            # We have to expand each of the inside values
-            for val in raw_value:
-                value.append(os.path.expandvars(val))
-        elif isinstance(raw_value, basestring):
-            # Strings can be freely expanded, even if they don't contain
-            # expansion variables
-            value = os.path.expandvars(raw_value)
-        else:
-            # Probably an int or bool
-            value = raw_value
-        return value
-    except WindowsError as e:
-        # If we can't access the registry key, assume None
-        return None
-
-def set_pref(key, value, domain=get_domain()):
-    """Sets a preference for domain"""
-    if is_mac():
-        return set_pref_mac(key, value, domain)
-    if is_windows():
-        return set_pref_win(key, value, domain)
-
-def set_pref_mac(key, value, domain=get_domain()):
-    """Sets a preference for domain"""
-    try:
-        CFPreferencesSetAppValue(key, value, domain)
-        if not CFPreferencesAppSynchronize(domain):
-            raise PreferenceError(
-                "Could not synchronize %s preference: %s" % key)
-    except Exception, err:
-        raise PreferenceError(
-            "Could not set %s preference: %s" % (key, err))
-def set_pref_win(key, value, domain=get_domain()):
-    """Set a value for a Windows registry key."""
-    try:
-        reg_key = _winreg.OpenKey(
-            _winreg.HKEY_CURRENT_USER,
-            domain,
-            0,
-            _winreg.KEY_WRITE
-        )
-    except WindowsError as e:
-        # If we can't open the key, try creating it!
-        try:
-            reg_key = _winreg.CreateKey(
-                _winreg.HKEY_CURRENT_USER,
-                domain
-                )
+            # Now get all the subfolders
+            i = 0
+            while True:
+                try:
+                    subkeyname = _winreg.EnumKey(reg_key, i)
+                    new_domain = os.path.join(regpath, subkeyname)
+                    # Recursively call this function for nested subkeys
+                    reg_dict[subkeyname] = self._get_windows_prefs(new_domain)
+                    i += 1
+                except WindowsError:
+                    # We've run out of subfolders to index
+                    break
+            return reg_dict
         except WindowsError as e:
             raise ProcessorError(
-                "Unable to open key: %s" % e
+                "Unable to open registry hive: %s" % e
             )
-    try:
-        key_type = _winreg.REG_NONE
-        if isinstance(value, dict):
-            # This special case code for RECIPE_REPOS
-            # Normally, RECIPE_REPOS is an array of dictionaries with a key of
-            # the folder path on disk to a repo, and the value is another
-            # dictionary, whose key is always "URL" and the value is the URL of
-            # the git repo.
-            new_domain = os.path.join(domain, os.path.basename(key))
-            new_dict = {}
-            # Because dictionaries aren't a thing in the registry, we have to
-            # create a subkey instead. The subkey will be RECIPE_REPOS, but
-            # instead of a dictionary containing a key, "URL" and the URL,
-            # we're just going to map the absolute path on disk to the URL
-            # directly as a key-value pair in the subkey.
-            # To do this, we create a new simple dictionary mapping.
-            # There's probably a more efficient way to do this.
-            for (k, v) in value.iteritems():
-                new_dict[k] = v['URL']
-            for (k, v) in new_dict.iteritems():
-                # Now that we have simple key-value pairs, we can create each
-                # key individually.
-                set_pref_win(k, v, new_domain)
+
+    def _set_macos_pref(self, key, value):
+        """Sets a preference for domain"""
+        try:
+            CFPreferencesSetAppValue(key, value, BUNDLE_ID)
+            if not CFPreferencesAppSynchronize(BUNDLE_ID):
+                raise PreferenceError("Could not synchronize %s preference: %s" % key)
+        except Exception as err:
+            raise PreferenceError("Could not set %s preference: %s" % (key, err))
+
+    def _set_windows_pref(self, key, value):
+        """Set a value for a Windows registry key."""
+        try:
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                BUNDLE_REG,
+                0,
+                _winreg.KEY_WRITE
+            )
+        except WindowsError as e:
+            # If we can't open the key, try creating it!
+            try:
+                reg_key = _winreg.CreateKey(
+                    _winreg.HKEY_CURRENT_USER,
+                    BUNDLE_REG
+                    )
+            except WindowsError as e:
+                raise ProcessorError(
+                    "Unable to open key: %s" % e
+                )
+        try:
+            key_type = _winreg.REG_NONE
+            if isinstance(value, dict):
+                # This special case code for RECIPE_REPOS
+                # Normally, RECIPE_REPOS is an array of dictionaries with a key of
+                # the folder path on disk to a repo, and the value is another
+                # dictionary, whose key is always "URL" and the value is the URL of
+                # the git repo.
+                new_domain = os.path.join(BUNDLE_REG, os.path.basename(key))
+                new_dict = {}
+                # Because dictionaries aren't a thing in the registry, we have to
+                # create a subkey instead. The subkey will be RECIPE_REPOS, but
+                # instead of a dictionary containing a key, "URL" and the URL,
+                # we're just going to map the absolute path on disk to the URL
+                # directly as a key-value pair in the subkey.
+                # To do this, we create a new simple dictionary mapping.
+                # There's probably a more efficient way to do this.
+                for (k, v) in value.iteritems():
+                    new_dict[k] = v['URL']
+                for (k, v) in new_dict.iteritems():
+                    # Now that we have simple key-value pairs, we can create each
+                    # key individually.
+                    set_pref_win(k, v, new_domain)
+                return
+            if isinstance(value, list):
+                key_type = _winreg.REG_MULTI_SZ
+            elif isinstance(value, basestring):
+                key_type = _winreg.REG_SZ
+            elif isinstance(value, int) or isinstance(value, bool):
+                key_type = _winreg.REG_DWORD
+            _winreg.SetValueEx(reg_key, key, 0, key_type, value)
+            _winreg.CloseKey(reg_key)
+        except (WindowsError, TypeError) as e:
+            raise PreferenceError(
+                "Unable to set %s key to value %s: %s" % (
+                    key, value, e)
+            )
+
+    def read_file(self, file_path):
+        """Read in a file and add the key/value pairs into preferences."""
+        # Determine type or file: plist or json
+        data = self._parse_json_or_plist_file(file_path)
+        for k in data:
+            self.prefs[k] = data[k]
+
+    def _write_json_file(self):
+        """Write out the prefs into JSON."""
+        try:
+            with open(self.file_path, "w") as f:
+                json.dump(
+                    self.prefs,
+                    f,
+                    skipkeys=True,
+                    ensure_ascii=True,
+                    indent=2,
+                    sort_keys=True,
+                )
+        except Exception as e:
+            log_err("Unable to write out JSON: {}".format(e))
+
+    def _write_plist_file(self):
+        """Write out the prefs into a Plist."""
+        try:
+            FoundationPlist.writePlist(self.prefs, self.file_path)
+        except Exception as e:
+            log_err("Unable to write out plist: {}".format(e))
+
+    def write_file(self):
+        """Write preferences back out to file."""
+        if not self.file_path:
+            # Nothing to do if we weren't given a file
             return
-        if isinstance(value, list):
-            key_type = _winreg.REG_MULTI_SZ
-        elif isinstance(value, basestring):
-            key_type = _winreg.REG_SZ
-        elif isinstance(value, int) or isinstance(value, bool):
-            key_type = _winreg.REG_DWORD
-        _winreg.SetValueEx(reg_key, key, 0, key_type, value)
-        _winreg.CloseKey(reg_key)
-    except (WindowsError, TypeError) as e:
-        raise PreferenceError(
-            "Unable to set %s key to value %s: %s" % (
-                key, value, e)
-        )
+        if self.type == "json":
+            self._write_json_file()
+        elif self.type == "plist":
+            self._write_plist_file()
 
-def get_all_prefs(domain=get_domain()):
-    """Return all preferences based on platform."""
-    if is_mac():
-        return get_all_prefs_mac(domain)
-    if is_windows():
-        return get_all_prefs_win(domain)
+    def get_pref(self, key):
+        """Retrieve a preference value."""
+        return self.prefs.get(key)
+
+    def get_all_prefs(self):
+        """Retrieve a dict of all preferences."""
+        return self.prefs
+
+    def set_pref(self, key, value):
+        """Set a preference value."""
+        self.prefs[key] = value
+        # On macOS, write it back to preferences domain if we didn't use a file
+        if is_mac() and self.type is None:
+            self._set_macos_pref(key, value)
+        # On Windows, write it back to the registry, if we didn't use a file.
+        elif is_windows() and self.type is None:
+            self._set_windows_pref(key, value)
+        elif self.file_path:
+            self.write_file()
+
+# Set the global preferences object
+globalPreferences = Preferences()
 
 
-def get_all_prefs_mac(domain=get_domain()):
+def get_pref(key):
+    """Return a single pref value (or None) for a domain."""
+    return globalPreferences.get_pref(key)
+
+
+def set_pref(key, value):
+    """Sets a preference for domain"""
+    globalPreferences.set_pref(key, value)
+
+
+def get_all_prefs():
     """Return a dict (or an empty dict) with the contents of all
     preferences in the domain."""
-    prefs = {}
+    return globalPreferences.get_all_prefs()
 
-    # get keys stored via 'defaults write [domain]'
-    user_keylist = CFPreferencesCopyKeyList(
-        BUNDLE_ID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
-    )
-
-    # get keys stored via 'defaults write /Library/Preferences/[domain]'
-    system_keylist = CFPreferencesCopyKeyList(
-        BUNDLE_ID, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    )
-
-    # CFPreferencesCopyAppValue() in get_pref() will handle returning the
-    # appropriate value using the search order, so merging prefs in order
-    # here isn't necessary
-    for keylist in [system_keylist, user_keylist]:
-        if keylist:
-            for key in keylist:
-                prefs[key] = get_pref(key, domain)
-    return prefs
-
-def get_all_prefs_win(domain=get_domain()):
-    """Get all preferences from the AutoPkg registry key."""
-    # Create a dictionary of a registry key.
-    reg_dict = {}
-    try:
-        reg_key = _winreg.OpenKey(
-            _winreg.HKEY_CURRENT_USER,
-            domain
-        )
-        i = 0
-        while True:
-            # We'll index each subkey one at a time
-            try:
-                (keyname, value, type) = _winreg.EnumValue(reg_key, i)
-                reg_dict[keyname] = value
-                i += 1
-            except WindowsError:
-                # We've run out of subkeys to index
-                break
-        # Now get all the subfolders
-        i = 0
-        while True:
-            try:
-                subkeyname = _winreg.EnumKey(reg_key, i)
-                new_domain = os.path.join(domain, subkeyname)
-                # Recursively call this function for nested subkeys
-                reg_dict[subkeyname] = get_all_prefs_win(new_domain)
-                i += 1
-            except WindowsError:
-                # We've run out of subfolders to index
-                break
-        return reg_dict
-    except WindowsError as e:
-        raise ProcessorError(
-            "Unable to open registry hive: %s" % e
-        )
-
-
-def get_identifier(recipe):
-    '''Return identifier from recipe dict. Tries the Identifier
-    top-level key and falls back to the legacy key location.'''
-    try:
-        return recipe["Identifier"]
-    except (KeyError, AttributeError):
-        try:
-            return recipe["Input"]["IDENTIFIER"]
-        except (KeyError, AttributeError):
-            return None
-    except TypeError:
-        return None
 
 def log(msg, error=False):
     """Message logger, prints to stdout/stderr."""
@@ -349,6 +422,8 @@ def log(msg, error=False):
 def log_err(msg):
     """Message logger for errors."""
     log(msg, error=True)
+
+
 def get_identifier(recipe):
     """Return identifier from recipe dict. Tries the Identifier
     top-level key and falls back to the legacy key location."""

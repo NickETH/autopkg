@@ -2,6 +2,10 @@
 #
 # Copyright 2010 Per Olofsson
 #
+# Inital Windows support by Nick McSpadden, 2018
+# 
+# Port to actual level. Adapt the CURL path for Windows. Sept 2019, Nick Heim
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at

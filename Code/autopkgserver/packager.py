@@ -15,35 +15,32 @@
 # limitations under the License.
 
 
+import grp
 import os
 import plistlib
-import stat
-import shutil
-import subprocess
-import re
-import tempfile
 import pwd
-import grp
-
+import re
+import shutil
+import stat
+import subprocess
+import tempfile
 from xml.parsers.expat import ExpatError
 
-__all__ = [
-    'Packager',
-    'PackagerError'
-]
+__all__ = ["Packager", "PackagerError"]
 
 
 class PackagerError(Exception):
     pass
+
 
 class Packager(object):
     """Create an Apple installer package.
 
     Must be run as root."""
 
-    re_pkgname = re.compile(r'^[a-z0-9][a-z0-9 ._\-]*$', re.I)
-    re_id      = re.compile(r'^[a-z0-9]([a-z0-9 \-]*[a-z0-9])?$', re.I)
-    re_version = re.compile(r'^[a-z0-9_ ]*[0-9][a-z0-9_ ]*$', re.I)
+    re_pkgname = re.compile(r"^[a-z0-9][a-z0-9 ._\-]*$", re.I)
+    re_id = re.compile(r"^[a-z0-9]([a-z0-9 \-]*[a-z0-9])?$", re.I)
+    re_version = re.compile(r"^[a-z0-9_ ]*[0-9][a-z0-9_ ]*$", re.I)
 
     def __init__(self, log, request, name, uid, gid):
         """Arguments:
@@ -89,9 +86,8 @@ class Packager(object):
             if not stat.S_ISDIR(info.st_mode):
                 raise PackagerError("%s is not a directory" % path)
 
-
         def cmd_output(cmd):
-            '''Outputs a stdout, stderr tuple from command output using a Popen'''
+            """Outputs a stdout, stderr tuple from command output using a Popen"""
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             out, err = p.communicate()
             if err:
@@ -99,13 +95,9 @@ class Packager(object):
                 self.log.debug(err)
             return (out, err)
 
-
         def get_mounts():
-            '''Returns a list of mounted volume paths as reported by diskutil.'''
-            out, err = cmd_output([
-                "/usr/sbin/diskutil",
-                "list",
-                "-plist"])
+            """Returns a list of mounted volume paths as reported by diskutil."""
+            out, err = cmd_output(["/usr/sbin/diskutil", "list", "-plist"])
             try:
                 du_list = plistlib.readPlistFromString(out)
             except ExpatError:
@@ -123,15 +115,13 @@ class Packager(object):
                             if "MountPoint" in part:
                                 vols.add(part["MountPoint"])
             else:
-                self.log.debug(
-                    "Missing AllDisksAndPartitions key in diskutil output")
+                self.log.debug("Missing AllDisksAndPartitions key in diskutil output")
             return list(vols)
 
-
         def check_ownerships_enabled(path):
-            '''Return True if 'ignore ownerships' is not set on the volume on which
+            """Return True if 'ignore ownerships' is not set on the volume on which
             'path' resides, False if otherwise. We warn and return True on
-            unexpected behavior.'''
+            unexpected behavior."""
 
             # resolve the absolute path if a symlink
             path = os.path.realpath(path)
@@ -146,8 +136,12 @@ class Packager(object):
             if mounts:
                 self.log.debug("Found mounted volumes: %s" % ", ".join(mounts))
             else:
-                self.log.debug(("WARNING: No mountpoints could be determined for "
-                             "checking ownerships."))
+                self.log.debug(
+                    (
+                        "WARNING: No mountpoints could be determined for "
+                        "checking ownerships."
+                    )
+                )
                 return True
 
             # find the mountpoint that has our path
@@ -157,19 +151,20 @@ class Packager(object):
                     mount_for_path = mount
                     break
             if not mount_for_path:
-                self.log.debug(("WARNING: Checking disk ownerships for path '%s' "
-                             "failed. Attempting to continue.."
-                             % path))
+                self.log.debug(
+                    (
+                        "WARNING: Checking disk ownerships for path '%s' "
+                        "failed. Attempting to continue.." % path
+                    )
+                )
                 return True
 
             # look for 'ignore ownerships' setting on the disk
             # if 'GlobalPermissionsEnabled' is true, ownerships are _not_ ignored
             self.log.debug("Checking disk ownerships for mount '%s'.." % mount_for_path)
-            out, err = cmd_output([
-                "/usr/sbin/diskutil",
-                "info",
-                "-plist",
-                mount_for_path])
+            out, err = cmd_output(
+                ["/usr/sbin/diskutil", "info", "-plist", mount_for_path]
+            )
             try:
                 du_info = plistlib.readPlistFromString(out)
             except ExpatError:
@@ -177,10 +172,12 @@ class Packager(object):
                 self.log.debug(err)
                 return True
 
-            if not "GlobalPermissionsEnabled" in du_info:
-                self.log.debug("WARNING: Couldn't read 'ignore ownerships' "
+            if "GlobalPermissionsEnabled" not in du_info:
+                self.log.debug(
+                    "WARNING: Couldn't read 'ignore ownerships' "
                     "setting for mount point '%s'. Attempting to "
-                    "continue." % mount_for_path)
+                    "continue." % mount_for_path
+                )
                 return True
 
             if not du_info["GlobalPermissionsEnabled"]:
@@ -188,17 +185,18 @@ class Packager(object):
             else:
                 return True
 
-
         self.log.debug("Verifying packaging request")
         # Check that a disk-based pkgroot isn't somewhere where 'ignore ownerships'
         # is set.
         if not check_ownerships_enabled(self.request.pkgroot):
             raise PackagerError(
-                ("'Ignore ownerships' is set on the disk where pkgroot '%s' "
-                "was set, and packaging cannot continue. Ownerships must "
-                "be enabled on the volume where a package is to be built.")
-                % self.request.pkgroot)
-
+                (
+                    "'Ignore ownerships' is set on the disk where pkgroot '%s' "
+                    "was set, and packaging cannot continue. Ownerships must "
+                    "be enabled on the volume where a package is to be built."
+                )
+                % self.request.pkgroot
+            )
 
         # Check owner and type of directories.
         verify_dir_and_owner(self.request.pkgroot, self.uid)
@@ -231,16 +229,16 @@ class Packager(object):
             raise PackagerError("Version too long")
         components = self.request.version.split(".")
         if len(components) < 1:
-            raise PackagerError("Invalid version \"%s\"" % self.request.version)
+            raise PackagerError('Invalid version "%s"' % self.request.version)
         for comp in components:
             if not self.re_version.search(comp):
-                raise PackagerError("Invalid version component \"%s\"" % comp)
+                raise PackagerError('Invalid version component "%s"' % comp)
         self.log.debug("version ok")
 
         # Make sure infofile and resources exist and can be read.
         if self.request.infofile:
             try:
-                with open(self.request.infofile, "rb") as f:
+                with open(self.request.infofile, "rb"):
                     pass
             except (IOError, OSError) as e:
                 raise PackagerError("Can't open infofile: %s" % e)
@@ -251,23 +249,23 @@ class Packager(object):
         if self.request.scripts:
             if self.request.pkgtype == "bundle":
                 raise PackagerError(
-                    "Installer scripts are not supported with "
-                    "bundle package types.")
+                    "Installer scripts are not supported with " "bundle package types."
+                )
             if not os.path.isdir(self.request.scripts):
                 raise PackagerError(
-                    "Can't find scripts directory: %s"
-                    % self.request.scripts)
+                    "Can't find scripts directory: %s" % self.request.scripts
+                )
             for script in ["preinstall", "postinstall"]:
                 script_path = os.path.join(self.request.scripts, script)
-                if os.path.exists(script_path) \
-                    and not os.access(script_path, os.X_OK):
+                if os.path.exists(script_path) and not os.access(script_path, os.X_OK):
                     raise PackagerError(
                         "%s script found in %s but it is not executable!"
-                        % (script, self.request.scripts))
+                        % (script, self.request.scripts)
+                    )
             self.log.debug("scripts ok")
 
         # FIXME: resources temporarily unsupported.
-        #if self.request.resources:
+        # if self.request.resources:
         #    try:
         #        os.listdir(self.request.resources)
         #    except OSError as e:
@@ -281,30 +279,29 @@ class Packager(object):
     def copy_pkgroot(self):
         """Copy pkgroot to temporary directory."""
 
-        name = self.request.pkgname
-
         self.log.debug("Copying package root")
 
         self.tmproot = tempfile.mkdtemp()
         self.tmp_pkgroot = os.path.join(self.tmproot, self.name)
         os.mkdir(self.tmp_pkgroot)
-        os.chmod(self.tmp_pkgroot, 01775)
+        os.chmod(self.tmp_pkgroot, 0o1775)
         os.chown(self.tmp_pkgroot, 0, 80)
         try:
-            p = subprocess.Popen(("/usr/bin/ditto",
-                                  self.request.pkgroot,
-                                  self.tmp_pkgroot),
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE)
+            p = subprocess.Popen(
+                ("/usr/bin/ditto", self.request.pkgroot, self.tmp_pkgroot),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             out, err = p.communicate()
         except OSError as e:
-            raise PackagerError("ditto execution failed with error code %d: %s" % (
-                                 e.errno, e.strerror))
+            raise PackagerError(
+                "ditto execution failed with error code %d: %s" % (e.errno, e.strerror)
+            )
         if p.returncode != 0:
-            raise PackagerError("Couldn't copy pkgroot from %s to %s: %s" % (
-                                 self.request.pkgroot,
-                                 self.tmp_pkgroot,
-                                 " ".join(str(err).split())))
+            raise PackagerError(
+                "Couldn't copy pkgroot from %s to %s: %s"
+                % (self.request.pkgroot, self.tmp_pkgroot, " ".join(str(err).split()))
+            )
 
         self.log.info("Package root copied to %s" % self.tmp_pkgroot)
 
@@ -323,7 +320,7 @@ class Packager(object):
                 if part in (".", ".."):
                     raise PackagerError(". and .. is not allowed in chown path")
                 checkpath = os.path.join(checkpath, part)
-                relpath = checkpath[len(root) + 1:]
+                relpath = checkpath[len(root) + 1 :]
                 if not os.path.exists(checkpath):
                     raise PackagerError("chown path %s does not exist" % relpath)
                 if os.path.islink(checkpath):
@@ -353,15 +350,15 @@ class Packager(object):
             if gid < 0:
                 raise PackagerError("Invalid gid %d" % gid)
 
-            self.log.info("Setting owner and group of %s to %s:%s" % (
-                     entry.path,
-                     str(entry.user),
-                     str(entry.group)))
+            self.log.info(
+                "Setting owner and group of %s to %s:%s"
+                % (entry.path, str(entry.user), str(entry.group))
+            )
 
             # If an absolute path is passed in entry.path, os.path.join
             # will not join it to the tmp_pkgroot. We need to strip out
             # the leading / to make sure we only touch the pkgroot.
-            chownpath = os.path.join(self.tmp_pkgroot, entry.path.lstrip('/'))
+            chownpath = os.path.join(self.tmp_pkgroot, entry.path.lstrip("/"))
             if "mode" in entry.keys():
                 chmod_present = True
             else:
@@ -369,14 +366,12 @@ class Packager(object):
             if os.path.isfile(chownpath):
                 os.lchown(chownpath, uid, gid)
                 if chmod_present:
-                    self.log.info("Setting mode of %s to %s" % (
-                        entry.path,
-                        str(entry.mode)))
+                    self.log.info(
+                        "Setting mode of %s to %s" % (entry.path, str(entry.mode))
+                    )
                     os.chmod(chownpath, int(entry.mode, 8))
             else:
-                for (dirpath,
-                     dirnames,
-                     filenames) in os.walk(chownpath):
+                for (dirpath, dirnames, filenames) in os.walk(chownpath):
                     try:
                         os.lchown(dirpath, uid, gid)
                     except OSError as e:
@@ -402,24 +397,31 @@ class Packager(object):
         turn off package relocation"""
         self.component_plist = os.path.join(self.tmproot, "component.plist")
         try:
-            p = subprocess.Popen(("/usr/bin/pkgbuild",
-                                  "--analyze",
-                                  "--root", self.tmp_pkgroot,
-                                  self.component_plist),
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+            p = subprocess.Popen(
+                (
+                    "/usr/bin/pkgbuild",
+                    "--analyze",
+                    "--root",
+                    self.tmp_pkgroot,
+                    self.component_plist,
+                ),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             (out, err) = p.communicate()
         except OSError as e:
             raise PackagerError(
                 "pkgbuild execution failed with error code %d: %s"
-                % (e.errno, e.strerror))
+                % (e.errno, e.strerror)
+            )
         if p.returncode != 0:
             raise PackagerError(
                 "pkgbuild failed with exit code %d: %s"
-                % (p.returncode, " ".join(str(err).split())))
+                % (p.returncode, " ".join(str(err).split()))
+            )
         try:
             plist = plistlib.readPlist(self.component_plist)
-        except BaseException as err:
+        except BaseException:
             raise PackagerError("Couldn't read %s" % self.component_plist)
         # plist is an array of dicts, iterate through
         for bundle in plist:
@@ -427,14 +429,13 @@ class Packager(object):
                 bundle["BundleIsRelocatable"] = False
         try:
             plistlib.writePlist(plist, self.component_plist)
-        except BaseException as err:
+        except BaseException:
             raise PackagerError("Couldn't write %s" % self.component_plist)
 
     def create_pkg(self):
         self.log.info("Creating package")
         if self.request.pkgtype != "flat":
-            raise PackagerError("Unsupported pkgtype %s" % (
-                                repr(self.request.pkgtype)))
+            raise PackagerError("Unsupported pkgtype %s" % (repr(self.request.pkgtype)))
 
         pkgname = self.request.pkgname + ".pkg"
         pkgpath = os.path.join(self.request.pkgdir, pkgname)
@@ -443,31 +444,42 @@ class Packager(object):
         if os.path.exists(pkgpath):
             try:
                 if os.lstat(pkgpath).st_uid != self.uid:
-                    raise PackagerError("Existing pkg %s not owned by %d" % (
-                                         pkgpath, self.uid))
+                    raise PackagerError(
+                        "Existing pkg %s not owned by %d" % (pkgpath, self.uid)
+                    )
                 if os.path.islink(pkgpath) or os.path.isfile(pkgpath):
                     os.remove(pkgpath)
                 else:
                     shutil.rmtree(pkgpath)
             except OSError as e:
-                raise PackagerError("Can't remove existing pkg %s: %s" % (
-                                     pkgpath, e.strerror))
+                raise PackagerError(
+                    "Can't remove existing pkg %s: %s" % (pkgpath, e.strerror)
+                )
 
         # Use a temporary name while building.
-        temppkgname = "autopkgtmp-%s-%s.pkg" % (self.random_string(16),
-                                     self.request.pkgname)
+        temppkgname = "autopkgtmp-%s-%s.pkg" % (
+            self.random_string(16),
+            self.request.pkgname,
+        )
         temppkgpath = os.path.join(self.request.pkgdir, temppkgname)
 
         # Wrap package building in try/finally to remove temporary package if
         # it fails.
         try:
             # make a pkgbuild cmd
-            cmd = ["/usr/bin/pkgbuild",
-                    "--root", self.tmp_pkgroot,
-                    "--identifier", self.request.id,
-                    "--version", self.request.version,
-                    "--ownership", "preserve",
-                    "--component-plist", self.component_plist]
+            cmd = [
+                "/usr/bin/pkgbuild",
+                "--root",
+                self.tmp_pkgroot,
+                "--identifier",
+                self.request.id,
+                "--version",
+                self.request.version,
+                "--ownership",
+                "preserve",
+                "--component-plist",
+                self.component_plist,
+            ]
             if self.request.infofile:
                 cmd.extend(["--info", self.request.infofile])
             if self.request.scripts:
@@ -476,18 +488,20 @@ class Packager(object):
 
             # Execute pkgbuild.
             try:
-                p = subprocess.Popen(cmd,
-                                     stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE)
+                p = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
                 (out, err) = p.communicate()
             except OSError as e:
                 raise PackagerError(
                     "pkgbuild execution failed with error code %d: %s"
-                    % (e.errno, e.strerror))
+                    % (e.errno, e.strerror)
+                )
             if p.returncode != 0:
-                raise PackagerError("pkgbuild failed with exit code %d: %s" % (
-                                     p.returncode,
-                                     " ".join(str(err).split())))
+                raise PackagerError(
+                    "pkgbuild failed with exit code %d: %s"
+                    % (p.returncode, " ".join(str(err).split()))
+                )
 
             # Change to final name and owner.
             os.rename(temppkgpath, pkgpath)
@@ -502,12 +516,13 @@ class Packager(object):
                 os.remove(temppkgpath)
             except OSError as e:
                 if e.errno != 2:
-                    self.log.warn("Can't remove temporary package at %s: %s" % (
-                                  temppkgpath, e.strerror))
+                    self.log.warn(
+                        "Can't remove temporary package at %s: %s"
+                        % (temppkgpath, e.strerror)
+                    )
 
     def cleanup(self):
         """Clean up resources."""
 
         if self.tmproot:
             shutil.rmtree(self.tmproot)
-

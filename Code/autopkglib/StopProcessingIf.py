@@ -16,19 +16,17 @@
 # 20190328 Nick Heim: Adaption for Windows. Very basic so far. Looking for a better predicate class...
 """See docstring for StopProcessingIf class"""
 
-from autopkglib import Processor, ProcessorError, is_mac, is_windows
+from autopkglib import Processor, ProcessorError, log, is_mac, is_windows
 import sys
 
-#pylint: disable=no-name-in-module
+# pylint: disable=no-name-in-module
 if is_mac():
     try:
         from Foundation import NSPredicate
     except:
-        print "WARNING: Failed 'from Foundation import NSPredicate' in " + __name__
-# elif is_windows():
-#    from pypred import Predicate, PredicateSet, OptimizedPredicateSet
+        log("WARNING: Failed 'from Foundation import NSPredicate' in " + __name__)
+# pylint: disable=no-name-in-module
 
-#pylint: disable=no-name-in-module
 
 __all__ = ["StopProcessingIf"]
 
@@ -36,31 +34,33 @@ __all__ = ["StopProcessingIf"]
 class StopProcessingIf(Processor):
     """Sets a variable to tell AutoPackager to stop processing a recipe if a
        predicate comparison evaluates to true."""
+
     description = __doc__
     input_variables = {
         "predicate": {
             "required": True,
-            "description":
-                ("NSPredicate-style comparison against an environment key. See "
-                 "http://developer.apple.com/library/mac/#documentation/"
-                 "Cocoa/Conceptual/Predicates/Articles/pSyntax.html"),
-        },
+            "description": (
+                "NSPredicate-style comparison against an environment key. See "
+                "http://developer.apple.com/library/mac/#documentation/"
+                "Cocoa/Conceptual/Predicates/Articles/pSyntax.html"
+            ),
+        }
     }
     output_variables = {
         "stop_processing_recipe": {
-            "description": "Boolean. Should we stop processing the recipe?",
-        },
+            "description": "Boolean. Should we stop processing the recipe?"
+        }
     }
 
     def predicate_evaluates_as_true(self, predicate_string):
         if is_mac():
-            '''Evaluates predicate against our environment dictionary'''
+            """Evaluates predicate against our environment dictionary"""
             try:
                 predicate = NSPredicate.predicateWithFormat_(predicate_string)
-            except Exception, err:
+            except Exception as err:
                 raise ProcessorError(
-                    "Predicate error for '%s': %s"
-                    % (predicate_string, err))
+                    "Predicate error for '%s': %s" % (predicate_string, err)
+                    )
 
             result = predicate.evaluateWithObject_(self.env)
             self.output("(%s) is %s" % (predicate_string, result))
@@ -79,11 +79,13 @@ class StopProcessingIf(Processor):
             self.output("(%s) is %s" % (predicate_string, result))
             return result
 
+
     def main(self):
-        self.env["stop_processing_recipe"] = (
-            self.predicate_evaluates_as_true(self.env["predicate"]))
+        self.env["stop_processing_recipe"] = self.predicate_evaluates_as_true(
+            self.env["predicate"]
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     PROCESSOR = StopProcessingIf()
     PROCESSOR.execute_shell()

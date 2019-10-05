@@ -15,59 +15,46 @@
 # limitations under the License.
 """See docstring for PkgInfoCreator class"""
 
-import os
-import FoundationPlist
 import math
+import os
 from xml.etree import ElementTree
 
+import FoundationPlist
 from autopkglib import Processor, ProcessorError
-
 
 __all__ = ["PkgInfoCreator"]
 
 
 class PkgInfoCreator(Processor):
     """Creates an PackageInfo file for a package."""
+
     description = __doc__
     input_variables = {
-        "template_path": {
-            "required": True,
-            "description": "An Info.plist template.",
-        },
-        "version": {
-            "required": True,
-            "description": "Version of the package.",
-        },
-        "pkgroot": {
-            "required": True,
-            "description": "Virtual root of the package.",
-        },
+        "template_path": {"required": True, "description": "An Info.plist template."},
+        "version": {"required": True, "description": "Version of the package."},
+        "pkgroot": {"required": True, "description": "Virtual root of the package."},
         "infofile": {
             "required": True,
             "description": "Path to the info file to create.",
         },
-        "pkgtype": {
-            "required": True,
-            "description": "'flat' or 'bundle'."
-        }
+        "pkgtype": {"required": True, "description": "'flat' or 'bundle'."},
     }
-    output_variables = {
-    }
+    output_variables = {}
 
     def find_template(self):
-        '''Searches for the template, looking in the recipe directory
-        and parent recipe directories if needed.'''
-        template_path = self.env['template_path']
+        """Searches for the template, looking in the recipe directory
+        and parent recipe directories if needed."""
+        template_path = self.env["template_path"]
         if os.path.exists(template_path):
             return template_path
         elif not template_path.startswith("/"):
-            recipe_dir = self.env.get('RECIPE_DIR')
+            recipe_dir = self.env.get("RECIPE_DIR")
             search_dirs = [recipe_dir]
             if self.env.get("PARENT_RECIPES"):
                 # also look in the directories containing the parent recipes
-                parent_recipe_dirs = list(set([
-                    os.path.dirname(item)
-                    for item in self.env["PARENT_RECIPES"]]))
+                parent_recipe_dirs = list(
+                    set([os.path.dirname(item) for item in self.env["PARENT_RECIPES"]])
+                )
                 search_dirs.extend(parent_recipe_dirs)
             for directory in search_dirs:
                 test_item = os.path.join(directory, template_path)
@@ -76,17 +63,17 @@ class PkgInfoCreator(Processor):
         raise ProcessorError("Can't find %s" % template_path)
 
     def main(self):
-        if self.env['pkgtype'] not in ("bundle", "flat"):
-            raise ProcessorError("Unknown pkgtype %s" % self.env['pkgtype'])
-        template = self.load_template(self.find_template(), self.env['pkgtype'])
-        if self.env['pkgtype'] == "bundle":
+        if self.env["pkgtype"] not in ("bundle", "flat"):
+            raise ProcessorError("Unknown pkgtype %s" % self.env["pkgtype"])
+        template = self.load_template(self.find_template(), self.env["pkgtype"])
+        if self.env["pkgtype"] == "bundle":
             raise ProcessorError("Bundle package creation no longer supported!")
         else:
             self.create_flat_info(template)
 
     def convert_bundle_info_to_flat(self, info):
-        '''Converts pkg info from bundle format to flat format'''
-        #pylint: disable=no-self-use
+        """Converts pkg info from bundle format to flat format"""
+        # pylint: disable=no-self-use
         # Since we now only support flat packages, we might be able to
         # get rid of this in the near future, but all existing recipes
         # would need to convert to only flat-style Resources/data
@@ -100,9 +87,11 @@ class PkgInfoCreator(Processor):
 
         pkg_info = ElementTree.Element("pkg-info")
         pkg_info.set("format-version", "2")
-        for bundle, flat in (("IFPkgFlagDefaultLocation", "install-location"),
-                             ("CFBundleShortVersionString", "version"),
-                             ("CFBundleIdentifier", "identifier")):
+        for bundle, flat in (
+            ("IFPkgFlagDefaultLocation", "install-location"),
+            ("CFBundleShortVersionString", "version"),
+            ("CFBundleIdentifier", "identifier"),
+        ):
             if bundle in info:
                 pkg_info.set(flat, info[bundle])
         if "IFPkgFlagAuthorizationAction" in info:
@@ -112,8 +101,8 @@ class PkgInfoCreator(Processor):
                 pkg_info.set("auth", "none")
         if "IFPkgFlagRestartAction" in info:
             pkg_info.set(
-                "postinstall-action",
-                conversion_map[info["IFPkgFlagRestartAction"]])
+                "postinstall-action", conversion_map[info["IFPkgFlagRestartAction"]]
+            )
 
         payload = ElementTree.SubElement(pkg_info, "payload")
         if "IFPkgFlagInstalledSize" in info:
@@ -122,10 +111,10 @@ class PkgInfoCreator(Processor):
         return ElementTree.ElementTree(pkg_info)
 
     def convert_flat_info_to_bundle(self, info):
-        '''Converts pkg info from flat format to bundle format'''
+        """Converts pkg info from flat format to bundle format"""
         # since we now only support flat packages, just raise an exception
-        #pylint: disable=unused-argument
-        #pylint: disable=no-self-use
+        # pylint: disable=unused-argument
+        # pylint: disable=no-self-use
         raise ProcessorError("Bundle package creation no longer supported!")
 
     def load_template(self, template_path, template_type):
@@ -134,11 +123,11 @@ class PkgInfoCreator(Processor):
         if template_path.endswith(".plist"):
             # Try to load Info.plist in bundle format.
             try:
-                info = FoundationPlist.readPlist(self.env['template_path'])
+                info = FoundationPlist.readPlist(self.env["template_path"])
             except FoundationPlist.FoundationPlistException:
                 raise ProcessorError(
-                    "Malformed Info.plist template %s"
-                    % self.env['template_path'])
+                    "Malformed Info.plist template %s" % self.env["template_path"]
+                )
             if template_type == "bundle":
                 return info
             else:
@@ -149,8 +138,8 @@ class PkgInfoCreator(Processor):
                 info = ElementTree.parse(template_path)
             except FoundationPlist.FoundationPlistException:
                 raise ProcessorError(
-                    "Malformed PackageInfo template %s"
-                    % self.env['template_path'])
+                    "Malformed PackageInfo template %s" % self.env["template_path"]
+                )
             if template_type == "flat":
                 return info
             else:
@@ -158,7 +147,7 @@ class PkgInfoCreator(Processor):
 
     def get_pkgroot_size(self, pkgroot):
         """Return the size of pkgroot (in kilobytes) and the number of files."""
-        #pylint: disable=no-self-use
+        # pylint: disable=no-self-use
 
         size = 0
         nfiles = 0
@@ -182,26 +171,26 @@ class PkgInfoCreator(Processor):
         if pkg_info.tag != "pkg-info":
             raise ProcessorError("PackageInfo root should be pkg-info")
 
-        pkg_info.set("version", self.env['version'])
+        pkg_info.set("version", self.env["version"])
 
         payload = pkg_info.find("payload")
         if payload is None:
             payload = ElementTree.SubElement(pkg_info, "payload")
-        size, nfiles = self.get_pkgroot_size(self.env['pkgroot'])
+        size, nfiles = self.get_pkgroot_size(self.env["pkgroot"])
         payload.set("installKBytes", str(size))
         payload.set("numberOfFiles", str(nfiles))
 
-        info.write(self.env['infofile'])
+        info.write(self.env["infofile"])
 
     def create_bundle_info(self, template):
-        '''create Info.plist data for bundle-style pkg'''
+        """Create Info.plist data for bundle-style pkg"""
         # We don't support the creation of bundle-style pkgs
         # any longer, so raise an exception
-        #pylint: disable=unused-argument
-        #pylint: disable=no-self-use
+        # pylint: disable=unused-argument
+        # pylint: disable=no-self-use
         raise ProcessorError("Bundle package creation no longer supported!")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     PROCESSOR = PkgInfoCreator()
     PROCESSOR.execute_shell()
-

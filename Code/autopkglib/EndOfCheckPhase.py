@@ -18,23 +18,20 @@ phase"""
 
 from autopkglib import Processor
 
-
 __all__ = ["EndOfCheckPhase"]
 
 
 class EndOfCheckPhase(Processor):
     """This processor does nothing at all."""
-    input_variables = {
-    }
-    output_variables = {
-    }
-    description = __doc__
 
+    input_variables = {}
+    output_variables = {}
+    description = __doc__
 
     def main(self):
         return
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     PROCESSOR = EndOfCheckPhase()
     PROCESSOR.execute_shell()

@@ -16,80 +16,95 @@
 
 """Core/shared autopkglib functions"""
 
-import os
-import sys
+from __future__ import print_function
+
+import glob
 import imp
-import pprint
+import os
 import platform
+import pprint
 import re
 import subprocess
-import glob
-
+import sys
 from distutils.version import LooseVersion
 
 
-def memoize(func):
-    """
-    Decorator to memoize results of function calls.
-    Works with functions that have no args.
-    https://www.thumbtack.com/engineering/a-primer-on-python-decorators/
-    """
-    cache = {}
-    def wrapper(*args):
-        try:
-            return cache[args]
-        except KeyError:
-            result = cache[args] = func(*args)
-            return result
-    return wrapper
+
+
+class memoize(dict):
+    """Class to cache the return values of an expensive function.
+    This version supports only functions with non-keyword arguments"""
+
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args):
+        return self[args]
+
+    def __missing__(self, key):
+        result = self[key] = self.func(*key)
+        return result
 
 
 @memoize
 def is_mac():
     """Return True if current OS is macOS."""
-    return 'Darwin' in platform.platform()
+    return "Darwin" in platform.platform()
 
 
 @memoize
 def is_windows():
     """Return True if current OS is Windows."""
-    return 'Windows' in platform.platform()
+    return "Windows" in platform.platform()
 
 
-#pylint: disable=no-name-in-module
+@memoize
+def is_linux():
+    """Return True if current OS is Linux."""
+    return "Linux" in platform.platform()
+
+
+# pylint: disable=no-name-in-module
 if is_mac():
     try:
         import FoundationPlist
         from Foundation import NSArray, NSDictionary
-        from CoreFoundation import CFPreferencesAppSynchronize, \
-                                   CFPreferencesCopyAppValue, \
-                                   CFPreferencesCopyKeyList, \
-                                   CFPreferencesSetAppValue, \
-                                   kCFPreferencesAnyHost, \
-                                   kCFPreferencesAnyUser, \
-                                   kCFPreferencesCurrentUser, \
-                                   kCFPreferencesCurrentHost
+        from CoreFoundation import (
+        CFPreferencesAppSynchronize,
+        CFPreferencesCopyAppValue,
+        CFPreferencesCopyKeyList,
+        CFPreferencesSetAppValue,
+        kCFPreferencesAnyHost,
+        kCFPreferencesAnyUser,
+        kCFPreferencesCurrentUser,
+        kCFPreferencesCurrentHost,
+        )
     except:
-        print "WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
-        print "WARNING: Failed 'from CoreFoundation import CFPreferencesAppSynchronize, ...' in " + __name__
+        print(
+        "WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
+        )
+        print(
+            "WARNING: Failed 'from CoreFoundation import "
+            "CFPreferencesAppSynchronize, ...' in " + __name__
+        )
 elif is_windows():
     import _winreg
     import plistlib as FoundationPlist
     NSArray = list
     NSDictionary = dict
     FoundationPlist.FoundationPlistException = Exception
-#pylint: enable=no-name-in-module
+# pylint: enable=no-name-in-module
 
 
 BUNDLE_ID = "com.github.autopkg"
 BUNDLE_REG = "Software\AutoPkg"
 
-RE_KEYREF = re.compile(r'%(?P<key>[a-zA-Z_][a-zA-Z_0-9]*)%')
+RE_KEYREF = re.compile(r"%(?P<key>[a-zA-Z_][a-zA-Z_0-9]*)%")
 
 class PreferenceError(Exception):
     """Preference exception"""
-    pass
 
+    pass
 
 @memoize
 def get_domain():
@@ -98,16 +113,12 @@ def get_domain():
         return BUNDLE_ID
     elif is_windows():
         return BUNDLE_REG
-
-
 def get_pref(key, domain=get_domain()):
     """Return a single pref value (or None) for a domain."""
     if is_mac():
         return get_pref_mac(key, domain)
     if is_windows():
         return get_pref_win(key, domain)
-
-
 def get_pref_mac(key, domain=get_domain()):
     """Return a single pref value (or None) for a domain."""
     value = CFPreferencesCopyAppValue(key, domain)
@@ -169,14 +180,12 @@ def get_pref_win(key, domain=get_domain()):
         # If we can't access the registry key, assume None
         return None
 
-
 def set_pref(key, value, domain=get_domain()):
     """Sets a preference for domain"""
     if is_mac():
         return set_pref_mac(key, value, domain)
     if is_windows():
         return set_pref_win(key, value, domain)
-
 
 def set_pref_mac(key, value, domain=get_domain()):
     """Sets a preference for domain"""
@@ -188,8 +197,6 @@ def set_pref_mac(key, value, domain=get_domain()):
     except Exception, err:
         raise PreferenceError(
             "Could not set %s preference: %s" % (key, err))
-
-
 def set_pref_win(key, value, domain=get_domain()):
     """Set a value for a Windows registry key."""
     try:
@@ -248,7 +255,6 @@ def set_pref_win(key, value, domain=get_domain()):
                 key, value, e)
         )
 
-
 def get_all_prefs(domain=get_domain()):
     """Return all preferences based on platform."""
     if is_mac():
@@ -264,11 +270,13 @@ def get_all_prefs_mac(domain=get_domain()):
 
     # get keys stored via 'defaults write [domain]'
     user_keylist = CFPreferencesCopyKeyList(
-        BUNDLE_ID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+        BUNDLE_ID, kCFPreferencesCurrentUser, kCFPreferencesAnyHost
+    )
 
     # get keys stored via 'defaults write /Library/Preferences/[domain]'
     system_keylist = CFPreferencesCopyKeyList(
-        BUNDLE_ID, kCFPreferencesAnyUser, kCFPreferencesCurrentHost)
+        BUNDLE_ID, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
+    )
 
     # CFPreferencesCopyAppValue() in get_pref() will handle returning the
     # appropriate value using the search order, so merging prefs in order
@@ -278,7 +286,6 @@ def get_all_prefs_mac(domain=get_domain()):
             for key in keylist:
                 prefs[key] = get_pref(key, domain)
     return prefs
-
 
 def get_all_prefs_win(domain=get_domain()):
     """Get all preferences from the AutoPkg registry key."""
@@ -331,28 +338,58 @@ def get_identifier(recipe):
     except TypeError:
         return None
 
+def log(msg, error=False):
+    """Message logger, prints to stdout/stderr."""
+    if error:
+        print(unicode(msg).encode("UTF-8"), file=sys.stderr)
+    else:
+        print(unicode(msg).encode("UTF-8"))
+
+
+def log_err(msg):
+    """Message logger for errors."""
+    log(msg, error=True)
+def get_identifier(recipe):
+    """Return identifier from recipe dict. Tries the Identifier
+    top-level key and falls back to the legacy key location."""
+    try:
+        return recipe["Identifier"]
+    except (KeyError, AttributeError):
+        try:
+            return recipe["Input"]["IDENTIFIER"]
+        except (KeyError, AttributeError):
+            return None
+    except TypeError:
+        return None
+
 
 def get_identifier_from_recipe_file(filename):
-    '''Attempts to read plist file filename and get the
-    identifier. Otherwise, returns None.'''
+    """Attempts to read plist file filename and get the
+    identifier. Otherwise, returns None."""
     try:
         # make sure we can read it
         recipe_plist = FoundationPlist.readPlist(filename)
-    except FoundationPlist.FoundationPlistException, err:
-        print >> sys.stderr, (
-            "WARNING: plist error for %s: %s" % (filename, unicode(err)))
+    except FoundationPlist.FoundationPlistException as err:
+        # unicode() doesn't exist in Python3, and we'd have to
+        # change the behavior by importing unicode_literals from
+        # __future__, which is a significant change requiring a lot of
+        # testing. For now, we're going to leave this as-is until
+        # the conversion to python3 is more mature.
+        log_err(
+            "WARNING: plist error for %s: %s" % (filename, unicode(err))  # noqa TODO
+        )
         return None
     return get_identifier(recipe_plist)
 
 
 def find_recipe_by_identifier(identifier, search_dirs):
-    '''Search search_dirs for a recipe with the given
-    identifier'''
+    """Search search_dirs for a recipe with the given
+    identifier"""
     for directory in search_dirs:
         normalized_dir = os.path.abspath(os.path.expanduser(directory))
         patterns = [
             os.path.join(normalized_dir, "*.recipe"),
-            os.path.join(normalized_dir, "*/*.recipe")
+            os.path.join(normalized_dir, "*/*.recipe"),
         ]
         for pattern in patterns:
             matches = glob.glob(pattern)
@@ -364,10 +401,11 @@ def find_recipe_by_identifier(identifier, search_dirs):
 
 
 def get_autopkg_version():
-    '''Gets the version number of autopkg'''
+    """Gets the version number of autopkg"""
     try:
         version_plist = FoundationPlist.readPlist(
-            os.path.join(os.path.dirname(__file__), "version.plist"))
+            os.path.join(os.path.dirname(__file__), "version.plist")
+        )
     except FoundationPlist.FoundationPlistException:
         return "UNKNOWN"
     try:
@@ -377,8 +415,8 @@ def get_autopkg_version():
 
 
 def version_equal_or_greater(this, that):
-    '''Compares two LooseVersion objects. Returns True if this is
-    equal to or greater than that'''
+    """Compares two LooseVersion objects. Returns True if this is
+    equal to or greater than that"""
     return LooseVersion(this) >= LooseVersion(that)
 
 
@@ -387,7 +425,7 @@ def update_data(a_dict, key, value):
     by wrapping the key in %percent% signs."""
 
     def getdata(match):
-        '''Returns data from a match object'''
+        """Returns data from a match object"""
         return a_dict[match.group("key")]
 
     def do_variable_substitution(item):
@@ -395,10 +433,8 @@ def update_data(a_dict, key, value):
         if isinstance(item, basestring):
             try:
                 item = RE_KEYREF.sub(getdata, item)
-            except KeyError, err:
-                print >> sys.stderr, (
-                    "Use of undefined key in variable substitution: %s"
-                    % err)
+            except KeyError as err:
+                log_err("Use of undefined key in variable substitution: %s" % err)
         elif isinstance(item, (list, NSArray)):
             for index in range(len(item)):
                 item[index] = do_variable_substitution(item[index])
@@ -426,18 +462,20 @@ def curl_cmd():
     """
 
     def is_executable(exe_path):
-        '''Is exe_path executable?'''
+        """Is exe_path executable?"""
         return os.path.exists(exe_path) and os.access(exe_path, os.X_OK)
 
-    curl_path_pref = get_pref('CURL_PATH')
+    curl_path_pref = get_pref("CURL_PATH")
     if curl_path_pref:
         if is_executable(curl_path_pref):
             # take a CURL_PATH pref
             return curl_path_pref
         else:
-            log_err("WARNING: Curl path given in the 'CURL_PATH' preference:'%s' "
-                    "either doesn't exist or is not executable! Falling back "
-                    "to one set in PATH, or /usr/bin/curl." % curl_path_pref)
+            log_err(
+                "WARNING: Curl path given in the 'CURL_PATH' preference:'%s' "
+                "either doesn't exist or is not executable! Falling back "
+                "to one set in PATH, or /usr/bin/curl." % curl_path_pref
+            )
     for path_env in os.environ["PATH"].split(":"):
         curlbin = os.path.join(path_env, "curl")
         if is_executable(curlbin):
@@ -448,11 +486,15 @@ def curl_cmd():
         return "/usr/bin/curl"
     return None
 
+
 # Processor and ProcessorError base class definitions
+
 
 class ProcessorError(Exception):
     """Base Error class"""
+
     pass
+
 
 class Processor(object):
     """Processor base class.
@@ -462,7 +504,7 @@ class Processor(object):
     """
 
     def __init__(self, env=None, infile=None, outfile=None):
-        #super(Processor, self).__init__()
+        # super(Processor, self).__init__()
         self.env = env
         if infile is None:
             self.infile = sys.stdin
@@ -475,21 +517,19 @@ class Processor(object):
 
     def output(self, msg, verbose_level=1):
         """Print a message if verbosity is >= verbose_level"""
-        if self.env.get('verbose', 0) >= verbose_level:
-            print "%s: %s" % (self.__class__.__name__, msg)
+        if self.env.get("verbose", 0) >= verbose_level:
+            print("%s: %s" % (self.__class__.__name__, msg))
 
     def main(self):
         """Stub method"""
-        #pylint: disable=no-self-use
+        # pylint: disable=no-self-use
         raise ProcessorError("Abstract method main() not implemented.")
 
     def get_manifest(self):
         """Return Processor's description, input and output variables"""
-        #pylint: disable=no-member
+        # pylint: disable=no-member
         try:
-            return (self.description,
-                    self.input_variables,
-                    self.output_variables)
+            return (self.description, self.input_variables, self.output_variables)
         except AttributeError as err:
             raise ProcessorError("Missing manifest: %s" % err)
 
@@ -526,42 +566,44 @@ class Processor(object):
             update_data(self.env, key, value)
 
     def inject(self, arguments):
-        '''Update environment data with arguments.'''
+        """Update environment data with arguments."""
         for key, value in arguments.items():
             update_data(self.env, key, value)
 
     def process(self):
         """Main processing loop."""
-        #pylint: disable=no-member
+        # pylint: disable=no-member
         # Make sure all required arguments have been supplied.
         for variable, flags in self.input_variables.items():
             # Apply default values to unspecified input variables
             if "default" in flags.keys() and (variable not in self.env):
                 self.env[variable] = flags["default"]
-                self.output("No value supplied for %s, setting default value "
-                            "of: %s" % (variable, self.env[variable]),
-                            verbose_level=2)
+                self.output(
+                    "No value supplied for %s, setting default value "
+                    "of: %s" % (variable, self.env[variable]),
+                    verbose_level=2,
+                )
             # Make sure all required arguments have been supplied.
             if flags.get("required") and (variable not in self.env):
-                raise ProcessorError(
-                    "%s requires %s" % (self.__name__, variable))
+                raise ProcessorError("%s requires %s" % (self.__name__, variable))
 
         self.main()
         return self.env
 
     def cmdexec(self, command, description):
         """Execute a command and return output."""
-        #pylint: disable=no-self-use
+        # pylint: disable=no-self-use
 
         try:
-            proc = subprocess.Popen(command,
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE)
+            proc = subprocess.Popen(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             (stdout, stderr) = proc.communicate()
         except OSError as err:
             raise ProcessorError(
                 "%s execution failed with error code %d: %s"
-                % (command[0], err.errno, err.strerror))
+                % (command[0], err.errno, err.strerror)
+            )
         if proc.returncode != 0:
             raise ProcessorError("%s failed: %s" % (description, stderr))
 
@@ -576,16 +618,20 @@ class Processor(object):
             self.main()
             self.write_output_plist()
         except ProcessorError as err:
-            print >> sys.stderr, "ProcessorError: %s" % err
+            log_err("ProcessorError: %s" % err)
             sys.exit(10)
         else:
             sys.exit(0)
 
+
 # AutoPackager class defintion
+
 
 class AutoPackagerError(Exception):
     """Error class"""
+
     pass
+
 
 class AutoPackager(object):
     """Instantiate and execute processors from a recipe."""
@@ -599,14 +645,13 @@ class AutoPackager(object):
     def output(self, msg, verbose_level=1):
         """Print msg if verbosity is >= than verbose_level"""
         if self.verbose >= verbose_level:
-            print msg
+            print(msg)
 
     def get_recipe_identifier(self, recipe):
         """Return the identifier given an input recipe plist."""
-        identifier = (recipe.get("Identifier") or
-                      recipe["Input"].get("IDENTIFIER"))
+        identifier = recipe.get("Identifier") or recipe["Input"].get("IDENTIFIER")
         if not identifier:
-            print "ID NOT FOUND"
+            log_err("ID NOT FOUND")
             # build a pseudo-identifier based on the recipe pathname
             recipe_path = self.env.get("RECIPE_PATH")
             # get rid of filename extension
@@ -636,13 +681,14 @@ class AutoPackager(object):
 
         # Check for MinimumAutopkgVersion
         if "MinimumVersion" in recipe.keys():
-            if not version_equal_or_greater(self.env["AUTOPKG_VERSION"],
-                                            recipe.get("MinimumVersion")):
+            if not version_equal_or_greater(
+                self.env["AUTOPKG_VERSION"], recipe.get("MinimumVersion")
+            ):
                 raise AutoPackagerError(
                     "Recipe (or a parent recipe) requires at least autopkg "
                     "version %s, but we are autopkg version %s."
-                    % (recipe.get("MinimumVersion"),
-                       self.env["AUTOPKG_VERSION"]))
+                    % (recipe.get("MinimumVersion"), self.env["AUTOPKG_VERSION"])
+                )
 
         # Initialize variable set with input variables.
         variables = set(recipe["Input"].keys())
@@ -651,21 +697,25 @@ class AutoPackager(object):
         # Check each step of the process.
         for step in recipe["Process"]:
             try:
-                processor_class = get_processor(step["Processor"],
-                                                recipe=recipe, env=self.env)
+                processor_class = get_processor(
+                    step["Processor"], recipe=recipe, env=self.env
+                )
             except (KeyError, AttributeError):
                 msg = "Unknown processor '%s'." % step["Processor"]
                 if "SharedProcessorRepoURL" in step:
-                    msg += (" This shared processor can be added via the "
-                            "repo: %s." % step["SharedProcessorRepoURL"])
+                    msg += (
+                        " This shared processor can be added via the "
+                        "repo: %s." % step["SharedProcessorRepoURL"]
+                    )
                 raise AutoPackagerError(msg)
             # Add arguments to set of variables.
             variables.update(set(step.get("Arguments", dict()).keys()))
             # Make sure all required input variables exist.
             for key, flags in processor_class.input_variables.items():
                 if flags["required"] and (key not in variables):
-                    raise AutoPackagerError("%s requires missing argument %s"
-                                            % (step["Processor"], key))
+                    raise AutoPackagerError(
+                        "%s requires missing argument %s" % (step["Processor"], key)
+                    )
 
             # Add output variables to set.
             variables.update(set(processor_class.output_variables.keys()))
@@ -675,9 +725,9 @@ class AutoPackager(object):
         identifier = self.get_recipe_identifier(recipe)
         # define a cache/work directory for use by the recipe
         cache_dir = os.path.expandvars(self.env.get("CACHE_DIR")) or os.path.expanduser(
-            "~/Library/AutoPkg/Cache")
-        self.env["RECIPE_CACHE_DIR"] = os.path.expandvars(os.path.join(
-            cache_dir, identifier))
+            "~/Library/AutoPkg/Cache"
+        )
+        self.env["RECIPE_CACHE_DIR"] = os.path.expandvars(os.path.join(cache_dir, identifier))
 
         recipe_input_dict = {}
         for key in self.env.keys():
@@ -688,10 +738,11 @@ class AutoPackager(object):
         if not os.path.exists(self.env["RECIPE_CACHE_DIR"]):
             try:
                 os.makedirs(self.env["RECIPE_CACHE_DIR"])
-            except OSError, err:
+            except OSError as err:
                 raise AutoPackagerError(
                     "Could not create RECIPE_CACHE_DIR %s: %s"
-                    % (self.env["RECIPE_CACHE_DIR"], err))
+                    % (self.env["RECIPE_CACHE_DIR"], err)
+                )
 
         if self.verbose > 2:
             pprint.pprint(self.env)
@@ -699,10 +750,11 @@ class AutoPackager(object):
         for step in recipe["Process"]:
 
             if self.verbose:
-                print step["Processor"]
+                print(step["Processor"])
 
             processor_name = extract_processor_name_with_recipe_identifier(
-                step["Processor"])[0]
+                step["Processor"]
+            )[0]
             processor_class = get_processor(processor_name)
             processor = processor_class(self.env)
             processor.inject(step.get("Arguments", dict()))
@@ -724,10 +776,11 @@ class AutoPackager(object):
                 # here to ensure that unexpected/unhandled exceptions
                 # from one processor do not prevent execution of
                 # subsequent recipes.
-                print >> sys.stderr, unicode(err)
+                log_err(unicode(err))  # noqa TODO
                 raise AutoPackagerError(
                     "Error in %s: Processor: %s: Error: %s"
-                    % (identifier, step["Processor"], unicode(err)))
+                    % (identifier, step["Processor"], unicode(err))
+                )  # noqa TODO
 
             output_dict = {}
             for key in processor.output_variables.keys():
@@ -742,9 +795,13 @@ class AutoPackager(object):
                 # pretty print output variables
                 pprint.pprint({"Output": output_dict})
 
-            self.results.append({'Processor': step["Processor"],
-                                 'Input': input_dict,
-                                 'Output': output_dict})
+            self.results.append(
+                {
+                    "Processor": step["Processor"],
+                    "Input": input_dict,
+                    "Output": output_dict,
+                }
+            )
 
             if self.env.get("stop_processing_recipe"):
                 # processing should stop now
@@ -753,10 +810,13 @@ class AutoPackager(object):
         if self.verbose > 2:
             pprint.pprint(self.env)
 
+
 _CORE_PROCESSOR_NAMES = []
 _PROCESSOR_NAMES = []
+
+
 def import_processors():
-    '''Imports processors from the directory this init file is in'''
+    """Imports processors from the directory this init file is in"""
     # get the directory this __init__.py file is in
     mydir = os.path.dirname(os.path.abspath(__file__))
     mydirname = os.path.basename(mydir)
@@ -765,7 +825,8 @@ def import_processors():
     processor_files = [
         os.path.splitext(name)[0]
         for name in os.listdir(mydir)
-        if name.endswith('.py') and not name == '__init__.py']
+        if name.endswith(".py") and not name == "__init__.py"
+    ]
 
     # Warning! Fancy dynamic importing ahead!
     #
@@ -777,8 +838,9 @@ def import_processors():
     #    from Bar.Foo import Foo
     #
     for name in processor_files:
-        globals()[name] = getattr(__import__(
-            mydirname + '.' + name, fromlist=[name]), name)
+        globals()[name] = getattr(
+            __import__(mydirname + "." + name, fromlist=[name]), name
+        )
         _PROCESSOR_NAMES.append(name)
         _CORE_PROCESSOR_NAMES.append(name)
 
@@ -786,80 +848,83 @@ def import_processors():
 # convenience functions for adding and accessing processors
 # since these can change dynamically
 def add_processor(name, processor_object):
-    '''Adds a Processor to the autopkglib namespace'''
+    """Adds a Processor to the autopkglib namespace"""
     globals()[name] = processor_object
-    if not name in _PROCESSOR_NAMES:
+    if name not in _PROCESSOR_NAMES:
         _PROCESSOR_NAMES.append(name)
 
 
-#pylint: disable=invalid-name
+# pylint: disable=invalid-name
 def extract_processor_name_with_recipe_identifier(processor_name):
-    '''Returns a tuple of (processor_name, identifier), given a Processor
+    """Returns a tuple of (processor_name, identifier), given a Processor
     name.  This is to handle a processor name that may include a recipe
     identifier, in the format:
 
     com.github.autopkg.recipes.somerecipe/ProcessorName
 
-    identifier will be None if one was not extracted.'''
-    identifier, delim, processor_name = processor_name.partition('/')
+    identifier will be None if one was not extracted."""
+    identifier, delim, processor_name = processor_name.partition("/")
     if not delim:
         # if no '/' was found, the first item in the tuple will be the
         # full string, the processor name
         processor_name = identifier
         identifier = None
     return (processor_name, identifier)
-#pylint: enable=invalid-name
+
+
+# pylint: enable=invalid-name
 
 
 def get_processor(processor_name, recipe=None, env=None):
-    '''Returns a Processor object given a name and optionally a recipe,
-    importing a processor from the recipe directory if available'''
+    """Returns a Processor object given a name and optionally a recipe,
+    importing a processor from the recipe directory if available"""
     if env is None:
         env = {}
     if recipe:
-        recipe_dir = os.path.dirname(recipe['RECIPE_PATH'])
+        recipe_dir = os.path.dirname(recipe["RECIPE_PATH"])
         processor_search_dirs = [recipe_dir]
 
         # check if our processor_name includes a recipe identifier that
         # should be used to locate the recipe.
         # if so, search for the recipe by identifier in order to add
         # its dirname to the processor search dirs
-        (processor_name, processor_recipe_id) = (
-            extract_processor_name_with_recipe_identifier(processor_name))
+        (
+            processor_name,
+            processor_recipe_id,
+        ) = extract_processor_name_with_recipe_identifier(processor_name)
         if processor_recipe_id:
-            shared_processor_recipe_path = (
-                find_recipe_by_identifier(processor_recipe_id,
-                                          env["RECIPE_SEARCH_DIRS"]))
+            shared_processor_recipe_path = find_recipe_by_identifier(
+                processor_recipe_id, env["RECIPE_SEARCH_DIRS"]
+            )
             if shared_processor_recipe_path:
                 processor_search_dirs.append(
-                    os.path.dirname(shared_processor_recipe_path))
+                    os.path.dirname(shared_processor_recipe_path)
+                )
 
         # search recipe dirs for processor
         if recipe.get("PARENT_RECIPES"):
             # also look in the directories containing the parent recipes
-            parent_recipe_dirs = list(set([
-                os.path.dirname(item)
-                for item in recipe["PARENT_RECIPES"]]))
+            parent_recipe_dirs = list(
+                set([os.path.dirname(item) for item in recipe["PARENT_RECIPES"]])
+            )
             processor_search_dirs.extend(parent_recipe_dirs)
 
         for directory in processor_search_dirs:
-            processor_filename = os.path.join(directory, processor_name + '.py')
+            processor_filename = os.path.join(directory, processor_name + ".py")
             if os.path.exists(processor_filename):
                 try:
                     # attempt to import the module
-                    _tmp = imp.load_source(
-                        processor_name, processor_filename)
+                    _tmp = imp.load_source(processor_name, processor_filename)
                     # look for an attribute with the step Processor name
                     _processor = getattr(_tmp, processor_name)
                     # add the processor to autopkglib's namespace
                     add_processor(processor_name, _processor)
                     # we've added a Processor, so stop searching
                     break
-                except (ImportError, AttributeError), err:
+                except (ImportError, AttributeError) as err:
                     # if we aren't successful, that might be OK, we're
                     # going see if the processor was already imported
-                    print >> sys.stderr, (
-                        "WARNING: %s: %s" % (processor_filename, err))
+                    log_err("WARNING: %s: %s" % (processor_filename, err))
 
     return globals()[processor_name]
 
@@ -870,9 +935,12 @@ def processor_names():
 
 
 def core_processor_names():
-    '''Returns the names of the 'core' processors'''
+    """Returns the names of the 'core' processors"""
     return _CORE_PROCESSOR_NAMES
+
 
 # when importing autopkglib, need to also import all the processors
 # in this same directory
+
+
 import_processors()

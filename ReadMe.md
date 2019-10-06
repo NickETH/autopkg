@@ -26,7 +26,7 @@ With AutoPkg, we define these steps in a "Recipe" plist-based format, run automa
 Installation on Windows
 -----------------------
 
-Download the [very first Windows release](https://github.com/NickETH/autopkg/tree/win). Choose "Clone or download", "Download ZIP".
+Download the [actual Windows release](https://github.com/NickETH/autopkg/tree/win). Choose "Clone or download", "Download ZIP".
 
 Extract the ZIP and copy the "Code" folder to the place, where your AutoPkg should run from. Rename it to AutoPkg. Rename the file "autopkg" in it to AutoPkg.py.
 

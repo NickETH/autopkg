@@ -18,6 +18,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # 20190328 Nick Heim: Adaption for Windows. Very basic so far. Looking for a better predicate class...
+# 20191105 Nick Heim: Port Windows adaption to V1.3.
+
 """See docstring for StopProcessingIf class"""
 
 from autopkglib import Processor, ProcessorError, log, is_mac, is_windows
@@ -57,18 +59,16 @@ class StopProcessingIf(Processor):
     def predicate_evaluates_as_true(self, predicate_string):
         if is_mac():
             """Evaluates predicate against our environment dictionary"""
-
             try:
                 predicate = NSPredicate.predicateWithFormat_(predicate_string)
             except Exception as err:
                 raise ProcessorError(
                     "Predicate error for '%s': %s" % (predicate_string, err)
-
                     )
-
             result = predicate.evaluateWithObject_(self.env)
             self.output("(%s) is %s" % (predicate_string, result))
             return result
+
 
         elif is_windows():
             try:
@@ -78,6 +78,7 @@ class StopProcessingIf(Processor):
             except Exception, err:
                 raise ProcessorError(
                     "Predicate error for '%s': %s"
+
                     % (predicate_string, err))
 
             self.output("(%s) is %s" % (predicate_string, result))

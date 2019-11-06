@@ -25,18 +25,13 @@ import subprocess
 import tempfile
 import time
 
-from autopkglib import Processor, ProcessorError, is_mac, is_windows
-try:
-    from autopkglib import BUNDLE_ID
-except ImportError:
-    BUNDLE_ID = "com.github.autopkg"
-try:
+from autopkglib import BUNDLE_ID, Processor, ProcessorError, is_mac, is_windows
+
+if is_mac():
     import xattr
 
-except ImportError:
-    if is_windows():
-        from autopkglib.pyads import pyads
-
+if is_windows():
+    from autopkglib.pyads import pyads
 __all__ = ["URLDownloader"]
 
 # XATTR names for Etag and Last-Modified headers
@@ -55,6 +50,7 @@ def getxattr(pathname, attr):
         handler = pyads.ADS(pathname)
         if handler.has_streams() and attr in handler.init_streams():
             return handler.get_stream_content(attr)
+
         return None
 
 
@@ -72,8 +68,8 @@ def default_curl_path():
     if is_mac():
         return '/usr/bin/curl'
     if is_windows():
-        #CURLpath = self.env["CURL_PATH"], "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
-        #return CURLpath
+        # CURLpath = self.env["CURL_PATH"], "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
+        # return CURLpath
         return "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
         # we use the curl, which comes with git.
         # we should consider to use the CURL_PATH variable here.
@@ -133,6 +129,7 @@ class URLDownloader(Processor):
         "CURL_PATH": {
             "required": False,
             "default": default_curl_path(),
+
             "description": ("Path to curl binary. Defaults to %s." %
                 default_curl_path)
         },
@@ -202,6 +199,7 @@ class URLDownloader(Processor):
         # the webserver.
         if is_mac():
             os.chmod(pathname_temporary, 0o644)
+
         # construct curl command.
         curl_cmd = [
             self.env["CURL_PATH"],
@@ -334,6 +332,7 @@ class URLDownloader(Processor):
         # to move the file or otherwise manipulate it.
         if is_windows():
             temporary_file.close()
+
         # If Content-Length header is present and we had a cached
         # file, see if it matches the size of the cached file.
         # Useful for webservers that don't provide Last-Modified

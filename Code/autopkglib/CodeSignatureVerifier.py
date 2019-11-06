@@ -18,6 +18,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # 20190929 Nick Heim: Adaption for Windows. Very basic so far.
+# 20191105 Nick Heim: Port Windows adaption to V1.3.
+
 """See docstring for CodeSignatureVerifier class"""
 
 import os.path

@@ -29,7 +29,12 @@ import subprocess
 import sys
 from distutils.version import LooseVersion
 
-# import FoundationPlist
+# try:
+    # import FoundationPlist
+# except ImportError:
+    # print(unicode("WARNING: importing plistlib as FoundationPlist;").encode("UTF-8"))
+    # print(unicode("WARNING: some plist formats will be unsupported").encode("UTF-8"))
+    # import plistlib as FoundationPlist
 
 
 class memoize(dict):
@@ -69,7 +74,7 @@ def is_linux():
 if is_mac():
     try:
         import FoundationPlist
-        from Foundation import NSArray, NSDictionary
+        from Foundation import NSArray, NSDictionary, NSNumber
         from CoreFoundation import (
         CFPreferencesAppSynchronize,
         CFPreferencesCopyAppValue,
@@ -81,15 +86,16 @@ if is_mac():
         kCFPreferencesCurrentHost,
         )
         from PyObjCTools import Conversion
-    except:
+    except ImportError:
         print(
-        "WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
+        "-WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
         )
         print(
-            "WARNING: Failed 'from CoreFoundation import "
+            "-WARNING: Failed 'from CoreFoundation import "
             "CFPreferencesAppSynchronize, ...' in " + __name__
         )
-elif is_windows():
+
+if is_windows():
     import _winreg
     import plistlib as FoundationPlist
     NSArray = list
@@ -134,6 +140,7 @@ class Preferences(object):
             self.type = "plist"
             self.file_path = file_path
             return Conversion.pythonCollectionFromPropertyList(data)
+
         except Exception:
             pass
         try:
@@ -149,12 +156,16 @@ class Preferences(object):
     def _get_macos_pref(self, key):
         """Get a specific macOS preference key."""
         value = CFPreferencesCopyAppValue(key, BUNDLE_ID)
-        # Casting NSArrays and NSDictionaries to native Python types.
-        # This a workaround for 10.6, where PyObjC doesn't seem to
-        # support as many common operations such as list concatenation
-        # between Python and ObjC objects.
-        if isinstance(value, NSArray) or isinstance(value, NSDictionary):
-            value = Conversion.pythonCollectionFromPropertyList(value)
+        if isinstance(value, NSNumber):
+            value = int(value)
+        elif isinstance(value, NSArray):
+            value = list(value)
+        elif isinstance(value, NSDictionary):
+            value = dict(value)
+            # RECIPE_REPOS is a dict of dicts
+            for k, v in value.items():
+                if isinstance(v, NSDictionary):
+                    value[k] = dict(v)
         return value
 
     def _get_macos_prefs(self):
@@ -264,7 +275,6 @@ class Preferences(object):
             raise ProcessorError(
                 "Unable to open registry hive: %s" % e
             )
-
     def _set_macos_pref(self, key, value):
         """Sets a preference for domain"""
         try:
@@ -331,7 +341,6 @@ class Preferences(object):
                 "Unable to set %s key to value %s: %s" % (
                     key, value, e)
             )
-
     def read_file(self, file_path):
         """Read in a file and add the key/value pairs into preferences."""
         # Determine type or file: plist or json
@@ -390,6 +399,7 @@ class Preferences(object):
             self._set_windows_pref(key, value)
         elif self.file_path:
             self.write_file()
+
 
 # Set the global preferences object
 globalPreferences = Preferences()

@@ -1,4 +1,61 @@
-### [1.0.5](https://github.com/autopkg/autopkg/compare/v1.0.4...HEAD) (Unreleased)
+### [2.0](https://github.com/autopkg/autopkg/compare/v1.3...HEAD) (Unreleased)
+
+### [1.3](https://github.com/autopkg/autopkg/compare/v1.2...v1.3) (November 04, 2019)
+
+FIXES:
+
+- `autopkg repo-list` wasn't respecting the `--prefs` option correctly (https://github.com/autopkg/autopkg/commit/ec7222335f7a0a191c8c7664ab81de477292f8b7)
+- `autopkg list-recipes` wasn't parsing the arguments correctly when used with `--prefs` (https://github.com/autopkg/autopkg/commit/8b15b7305cf9ef32310c6bc3728bf83fd06a4aee)
+- Reading in an integer value from macOS preferences and writing it out to disk was
+  using incorrect formatting due to a mismatch between plistlib, FoundationPlist, and
+  PyObjc data types, which caused MakeCatalogs.munki to fail. Now uses Python primitive
+  types instead (https://github.com/autopkg/autopkg/commit/8b15b7305cf9ef32310c6bc3728bf83fd06a4aee)
+
+### [1.2](https://github.com/autopkg/autopkg/compare/v1.1...1.2) (September 16, 2019)
+
+FIXES:
+
+- Fixes erroneous `curl` using `--compress` instead of `--compressed` (https://github.com/autopkg/autopkg/commit/3c8bc23d89e902d9e7f69ff698179f38f36a9a44)
+- Redirect from GitHub resulted in two header blocks (https://github.com/autopkg/autopkg/commit/b851d6d5de1bbab2523807c898dbb093d5f9fbcb)
+- PkgCopier would incorrectly use the pre-globbed input path if a destination was
+  not specified (https://github.com/autopkg/autopkg/commit/02f461cf6f503dfc65151aef5180a882cc6f6f72)
+
+ADDITIONS:
+- Preferences can now be provided from an external file using `--prefs`. The input
+  file can be either in JSON or plist format, and will be treated identically
+  to preferences from macOS. (https://github.com/autopkg/autopkg/commit/7ae2f552535741cb4ee131131d16a1fd93186c14)
+
+IMPROVEMENTS:
+- Several unit tests have been added for some core AutoPkg functionality, and
+  certain processors.
+- All occurrences of `print()` in the core autopkg script were replaced with `log` and `log_err` (https://github.com/autopkg/autopkg/commit/8300b807e29553be92c8c74894090442c8312b6d)
+- The groundwork has been laid for running AutoPkg on alternative platforms.
+- AutoPkg now uses a pre-commit hook that enforces the use of black, isort, and
+  flake8 to ensure code quality. This includes a new CONTRIBUTING guide (https://github.com/autopkg/autopkg/blob/master/CONTRIBUTING.md)
+
+### [1.1RC2](https://github.com/autopkg/autopkg/compare/v1.0.4...v1.1RC2) (May 23, 2019)
+
+FIXES:
+
+- Fix for autopkg output in 1.1RC1 going to stderr instead of stdout (https://github.com/autopkg/autopkg/commit/d67a8888e0bd900f0fba595a1d3d95bbf391d095)
+- Add `--compress` option to `curl` calls in SparkleUpdateInfoProvider and URLTextSearcher
+  to work around websites that return compressed results even when request does not indicate
+  they will be accepted. (GH-461)
+- URLDownloader: Better handling of more HTTP 3xx redirects (GH-429)
+- Better handling of paths starting with `~/` (GH-437) (https://github.com/autopkg/autopkg/commit/603f2207df3cd88b3a2cb3e59543923648ac6522)
+- `generate_processor_docs` sorts the sidebar alphabetically (GH-520)
+
+ADDITIONS:
+
+- New `--force` option for `autopkg make-override` (GH-425)
+- Add `-q/--quiet` option to suppress Github search and suggestions (GH-426)
+- New `new-recipe` subcommand (https://github.com/autopkg/autopkg/commit/f92a0a46042c14de502379ed7f454e1aa9053db1)
+- Added DeprecationWarning processor to core processors (https://github.com/autopkg/autopkg/commit/7b4abac0ce4955689a8af482249963c5253038ae)
+
+IMPROVEMENTS:
+
+- Code run through several processors/formatters (flake8, isort, black, python-modernize) to
+  prepare for Python 3 compatibility
 
 ### [1.0.4](https://github.com/autopkg/autopkg/compare/v1.0.3...v1.0.4) (March 05, 2018)
 

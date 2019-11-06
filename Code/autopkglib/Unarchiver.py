@@ -4,7 +4,7 @@
 #
 # Inital Windows support by Nick McSpadden, 2018
 # 
-# Port to actual level. Adapt the CURL path for Windows. Sept 2019, Nick Heim
+# Port to actual level. Adapt the CURL path for Windows. Nov 2019, Nick Heim
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@
 import os
 import shutil
 import subprocess
-import zipfile
 
 from autopkglib import Processor, ProcessorError, is_mac, is_windows
 

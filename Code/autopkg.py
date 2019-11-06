@@ -59,21 +59,30 @@ from autopkglib import (
 	is_windows
 )
 
-if sys.platform != "darwin":
-    print(
-        """
---------------------------------------------------------------------------------
--- WARNING: AutoPkg is not completely functional on platforms other than OS X --
---------------------------------------------------------------------------------
-"""
-    )
+# if sys.platform != "darwin":
+    # print(
+        # """
+# --------------------------------------------------------------------------------
+# -- WARNING: AutoPkg is not completely functional on platforms other than OS X --
+# --------------------------------------------------------------------------------
+# """
+    # )
 
-try:
-    import FoundationPlist
-except:
-    log("WARNING: importing plistlib as FoundationPlist;")
-    log("WARNING: some plist formats will be unsupported")
-    import plistlib as FoundationPlist
+if is_mac():
+    try:
+        import FoundationPlist
+    except ImportError:
+        print(
+        "WARNING: Failed 'import FoundationPlist'"
+        )
+elif is_windows():
+    try:
+        import plistlib as FoundationPlist
+    except ImportError:
+        print(
+        "WARNING: Failed 'import plistlib as FoundationPlist'"
+        )
+
 
 # If any recipe fails during 'autopkg run', return this exit code
 RECIPE_FAILED_CODE = 70
@@ -837,7 +846,7 @@ def repo_list(argv):
     parser.set_usage(
         "Usage: %s %s\n" "List all installed recipe repos." % ("%prog", verb)
     )
-
+    _options, _arguments = common_parse(parser, argv)
     recipe_repos = get_pref("RECIPE_REPOS") or {}
     if recipe_repos:
         for key in sorted(recipe_repos.keys()):
@@ -1324,7 +1333,7 @@ def list_recipes(argv):
 
     # Parse options
     add_search_and_override_dir_options(parser)
-    options = common_parse(parser, argv[1:])[0]
+    (options, arguments) = common_parse(parser, argv)
 
     augmented_list = False
     if options.with_identifiers or options.with_paths or options.plist:
@@ -2356,9 +2365,9 @@ def run_recipes(argv):
         # autopackager.env["RECIPE_CACHE_DIR"] is not defined and we can't
         # write a recipt. We should handle this better.
         # for now, just write the receipt to /tmp/receipts
-        receipt_dir = os.path.expandvars(os.path.join(
+        receipt_dir = os.path.join(
             autopackager.env.get("RECIPE_CACHE_DIR", "/tmp"), "receipts"
-        ))
+        )
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         receipt_name = "%s-receipt-%s.plist" % (recipe_basename, timestamp)
 
@@ -2782,8 +2791,7 @@ def main(argv):
     }
 
     # Warn against running as root
-    #if os.getuid() == 0:
-    if 'Windows' not in platform.platform() and os.getuid() == 0:
+    if is_mac() and os.getuid() == 0:
         log_err("\n" + "WARNING! " * 8 + "\n")
         log_err(
             "    Running AutoPkg as root or using `sudo` is not recommended!\n"

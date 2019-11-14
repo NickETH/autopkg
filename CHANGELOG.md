@@ -1,5 +1,5 @@
 ### [2.0](https://github.com/autopkg/autopkg/compare/v1.3...HEAD) (Unreleased)
-### [1.3.1](https://github.com/NickETH/autopkg) (November 14, 2019)
+### [1.3.1](https://github.com/autopkg/autopkg/commit/e56a325a5f1c543011c8363a1c89e02c8cd25f61) for Windows (November 14, 2019)
 
 FIXES:
 

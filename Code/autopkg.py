@@ -56,12 +56,14 @@ from autopkglib import (
     processor_names,
     set_pref,
     version_equal_or_greater,
-	is_windows
+	is_windows,
+    del_pref_win
 )
 
 # if sys.platform != "darwin":
     # print(
         # """
+
 # --------------------------------------------------------------------------------
 # -- WARNING: AutoPkg is not completely functional on platforms other than OS X --
 # --------------------------------------------------------------------------------
@@ -82,7 +84,6 @@ elif is_windows():
         print(
         "WARNING: Failed 'import plistlib as FoundationPlist'"
         )
-
 
 # If any recipe fails during 'autopkg run', return this exit code
 RECIPE_FAILED_CODE = 70
@@ -690,7 +691,8 @@ def get_search_dirs():
 def get_override_dirs():
     """Return override dirs from preferences or default list"""
     default = ["~/Library/AutoPkg/RecipeOverrides"]
-
+    if is_windows():
+        default = ["%APPDATA%\AutoPkg\RecipeOverrides"]
     dirs = get_pref("RECIPE_OVERRIDE_DIRS")
     if isinstance(dirs, basestring):
         # convert a string to a list
@@ -825,6 +827,8 @@ def repo_delete(argv):
         # now remove the repo files
         try:
             if is_windows():
+                # RECIPE_REPOS needs a special treatment on Windows
+                del_pref_win("RECIPE_REPOS", repo_path)
                 # we need to remove readonly, hidden and system bits
                 os.system('attrib.exe -r -h -s ' + repo_path + '\\*.* /S /D')
             shutil.rmtree(repo_path)

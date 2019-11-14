@@ -57,6 +57,7 @@ Frequently Asked Questions (and answers!) are [here](https://github.com/autopkg/
 
 See [the wiki](https://github.com/autopkg/autopkg/wiki) for more documentation.
 
+See [recipes-win](https://github.com/NickETH/recipes-win/tree/master/SharedProcessors) for a basic set of processors for Windows.
 
 Discussion
 ----------

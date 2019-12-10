@@ -26,9 +26,9 @@ With AutoPkg, we define these steps in a "Recipe" plist-based format, run automa
 Installation on Windows
 -----------------------
 
-Download the [actual Windows release](https://github.com/NickETH/autopkg/tree/win). Choose "Clone or download", "Download ZIP".
+Download the [actual Windows release](https://github.com/NickETH/autopkg/releases).  Download the MSI.
 
-Extract the ZIP and copy the "Code" folder to the place, where your AutoPkg should run from. Rename it to AutoPkg. Rename the file "autopkg" in it to AutoPkg.py.
+Start the installer. There are all the instructions, you need.
 
 AutoPkg for Windows requires Windows 7 or newer, 32 or 64bit and to have Git installed is highly recommended, so managing recipe repositories is possible. Knowledge of Git itself is not required but helps.
 
@@ -37,6 +37,7 @@ Git can be installed [from here](https://git-scm.com/download/win).
 **The following software and tools are needed as prequisites to run AutoPkg on Windows:**
 
 * Python 2.7.x: [Download](https://www.python.org/downloads/)
+* Git (highly recomended): [Download](https://github.com/git-for-windows/git/releases/latest)
 * 7zip: [Download](https://www.7-zip.org/)
 * Windows-Installer-SDK: [Download](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive), You have to select the version, that fits your OS. This is necessary for some of the MSI-related processors.
   * Download the webinstaller, choose a download directory and select at least: "MSI Tools" and "Windows SDK for Desktop C++ x86 Apps", (there will be some additional selections).
@@ -44,9 +45,11 @@ Git can be installed [from here](https://git-scm.com/download/win).
   * Find the install location (Somewhere under C:\Program Files (x86)\Windows Kits\...)
   * Copy the Wi*.vbs and Msi*.exe files over to your tools folder.
 * Wix-Toolset: [Download](https://wixtoolset.org/releases/), version 3.11 should do it. Although, i always use the latest development version.
-* NANT: [Download](http://nant.sourceforge.net/), this is one of the predecessors of MS-Build, which you should use, when starting with a new build-enviroment.
-  * i know: This tool is hopelessly outdated, but i use it around WIX since ages. Just did not find the time to move over to MS-Build so far. If someone likes to step in...
-* Edit the "AutoPkg-default.reg" regfile and alter the paths to your needs. Then apply it to the working account on your build machine for AutoPkg.
+* MSBuild: [Download](https://stackoverflow.com/questions/42696948/how-can-i-install-the-vs2017-version-of-msbuild-on-a-build-server-without-instal), THE Windows Make!
+  * See the AutoPkg build itself for a jump start. Wix-based stuff should use it to build/make.
+* NANT: [Download](http://nant.sourceforge.net/) (Deprecated), this is one of the predecessors of MS-Build (which you should use, when starting with a new build-enviroment).
+  * i know: This tool is hopelessly outdated, but i use it around WIX since ages. Just did not find the time to move over to MS-Build so far. Transition is on its way...
+
 
 Usage
 -----

@@ -1,7 +1,7 @@
 AutoPkg for Windows!
 ====================
 
-Early, experimental Windows release is [here](https://github.com/NickETH/autopkg/tree/win).
+Early, experimental Windows release is [here](https://github.com/NickETH/autopkg/releases).
 
 This became possible thanks to the fundamental work of [Nick McSpadden](https://github.com/nmcspadden/autopkg/tree/win) !
 
@@ -31,24 +31,31 @@ Download the [actual Windows release](https://github.com/NickETH/autopkg/release
 Start the installer. There are all the instructions, you need.
 
 AutoPkg for Windows requires Windows 7 or newer, 32 or 64bit and to have Git installed is highly recommended, so managing recipe repositories is possible. Knowledge of Git itself is not required but helps.
-
-Git can be installed [from here](https://git-scm.com/download/win).
+Tested only on 64bit!
 
 **The following software and tools are needed as prequisites to run AutoPkg on Windows:**
 
 * Python 2.7.x: [Download](https://www.python.org/downloads/)
-* Git (highly recomended): [Download](https://github.com/git-for-windows/git/releases/latest)
+  * Needed libraries: msl.loadlib, pythonnet, comtypes, pywin32
+  * If Python is present, those libs are automatically installed by the AutoPkg installer.
+* Git (highly recomended): [Download](https://git-scm.com/download/win)
 * 7zip: [Download](https://www.7-zip.org/)
 * Windows-Installer-SDK: [Download](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive), You have to select the version, that fits your OS. This is necessary for some of the MSI-related processors.
-  * Download the webinstaller, choose a download directory and select at least: "MSI Tools" and "Windows SDK for Desktop C++ x86 Apps", (there will be some additional selections).
-  * Then install at minimum: "Windows SDK Desktop Tools x86-x86_en-us.msi". If you know how to do it, an admin install will do.
+  * Download the webinstaller, choose a download directory and select at least: "MSI Tools", "Windows SDK for Desktop C++ x86 Apps" and on x64 systems also "Windows SDK for Desktop C++ x64 Apps", (there will be some additional selections).
+  * Then install at minimum: "Windows SDK Desktop Tools x86-x86_en-us.msi" and "Windows SDK Desktop Tools x64-x86_en-us.msi" (x64 only).
   * Find the install location (Somewhere under C:\Program Files (x86)\Windows Kits\...)
-  * Copy the Wi*.vbs and Msi*.exe files over to your tools folder.
+  * Copy the Wi*.vbs and Msi*.exe files over to your MSITools folder.
+  * Register the 64bit mergemod DLL: regsvr32 "C:\Program Files (x86)\Windows Kits\10\bin\xxx\x64\mergemod.dll"
+  * If the SDK is present, this COM DLL is automatically registered by the AutoPkg installer.
 * Wix-Toolset: [Download](https://wixtoolset.org/releases/), version 3.11 should do it. Although, i always use the latest development version.
-* MSBuild: [Download](https://stackoverflow.com/questions/42696948/how-can-i-install-the-vs2017-version-of-msbuild-on-a-build-server-without-instal), THE Windows Make!
+* MSBuild: [Download] (https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16#), THE Windows Make!
+  * Install commandline: vs_buildtools.exe --add Microsoft.VisualStudio.Workload.MSBuildTools --quiet
+  * [Install HowTo] (https://stackoverflow.com/questions/42696948/how-can-i-install-the-vs2017-version-of-msbuild-on-a-build-server-without-instal)
   * See the AutoPkg build itself for a jump start. Wix-based stuff should use it to build/make.
 * NANT: [Download](http://nant.sourceforge.net/) (Deprecated), this is one of the predecessors of MS-Build (which you should use, when starting with a new build-enviroment).
   * i know: This tool is hopelessly outdated, but i use it around WIX since ages. Just did not find the time to move over to MS-Build so far. Transition is on its way...
+  * Download the ZIP package, extract it and copy the "nant-0.92" folder to the MSITools dir.
+* ResourceHacker: [Download](http://www.angusj.com/resourcehacker/#download), Download the ZIP install, extract it and copy ResourceHacker.exe to your tools folder.
 
 
 Usage

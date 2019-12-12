@@ -29,8 +29,10 @@ Installation on Windows
 Download the [actual Windows release](https://github.com/NickETH/autopkg/releases).  Download the MSI.
 But first, install all the prequisites!
 
-Recommended installation is per user into the user profile, which is used to run AutoPkg. For this to work, the MSI must be advertised with admin rights and the following command: 
+Recommended installation is per user into the user profile, which is used to run AutoPkg. For this to work, the MSI must be advertised with admin rights and the following command:
+
 msiexec /jm AutoPkgWin.msi
+
 After this, the Installer can be run with standard user rights.
 
 AutoPkg for Windows requires Windows 7 or newer, 32 or 64bit and to have Git installed is highly recommended, so managing recipe repositories is possible. Knowledge of Git itself is not required but helps.

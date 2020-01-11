@@ -1,17 +1,30 @@
-### [2.0](https://github.com/autopkg/autopkg/compare/v1.3...HEAD) (Unreleased)
-### [1.3.1](https://github.com/autopkg/autopkg/commit/e56a325a5f1c543011c8363a1c89e02c8cd25f61) for Windows (November 14, 2019)
+### [1.4.1](https://github.com/autopkg/autopkg/compare/v1.4...v1.4.1) (December 02, 2019)
 
 FIXES:
+* URLGetter now has a `download_to_file(url, filename)` function that can be used in
+custom processors. It simply downloads a URL to a specific filename, and raises a
+ProcessorError if it fails for any reason.
 
-- repo-add, repo-update working again
-- repo-delete now implemented
+### [1.4](https://github.com/autopkg/autopkg/compare/v1.3.1...v1.4) (November 25, 2019)
 
-### [1.3.1](https://github.com/autopkg/autopkg/compare/v1.3...v1.3.1) (November 06, 2019)
+FIXES:
+  * DmgMounter now correctly handles APFS disk images, especially with EULAs/SLAs (https://github.com/autopkg/autopkg/commit/4b77f6d5948a2f36258f4695f503513ec7671745)
+
+ADDITIONS:
+* The new URLGetter base Processor class has been merged in. It provides a new centralized way to handle fetching and downloading things from the web. In the future, more convenience functions will be added to allow any custom processor to easily fetch web resources without having to write their own urllib/web-handling code.
+* Thanks to @MichalMMac's heroic efforts, URLGetter is now much easier for other processors to use. There are now two ways a custom processor can download things without needing to write any urllib logic:
+  * `URLGetter.download_with_curl(curl_command, text=True)` takes a curl command as an argument (a list of strings that is passed to subprocess). You can use this along with the other helper functions to arrange your own curl command with custom headers and arguments, and parse the output.
+  * `URLGetter.download(url, headers=None, text=False)` takes a URL (and optional headers) and returns the output of the curl command. You can use this to simply retrieve the results of requesting a web page (such as for URLTextSearcher).
+* In both cases, you can pass text mode to determine if you get straight text output.
+* All custom processors that need to make a web request of any kind in autopkg/recipes have been switched to using URLGetter's methods. No more urllib in processors!
+
+### [1.3.1](https://github.com/autopkg/autopkg/compare/v1.3...v1.4) (November 06, 2019)
 
 FIXES:
 
 - Nested data structures in preferences, such as with JSS_REPOS, should no longer
   cause AutoPkg to fail (https://github.com/autopkg/autopkg/commit/1aff762d8ea658b3fca8ac693f3bf13e8baf8778)
+
 ### [1.3](https://github.com/autopkg/autopkg/compare/v1.2...v1.3) (November 04, 2019)
 
 FIXES:

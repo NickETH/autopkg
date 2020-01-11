@@ -60,30 +60,27 @@ from autopkglib import (
     del_pref_win
 )
 
-# if sys.platform != "darwin":
-    # print(
-        # """
-
-# --------------------------------------------------------------------------------
-# -- WARNING: AutoPkg is not completely functional on platforms other than OS X --
-# --------------------------------------------------------------------------------
-# """
+#if sys.platform != "darwin":
+    #print(
+     #   """
+#--------------------------------------------------------------------------------
+#-- WARNING: AutoPkg is not completely functional on platforms other than OS X --
+#--------------------------------------------------------------------------------
+#"""
     # )
 
 if is_mac():
     try:
         import FoundationPlist
     except ImportError:
-        print(
-        "WARNING: Failed 'import FoundationPlist'"
-        )
+        log("WARNING: importing plistlib as FoundationPlist;")
+        log("WARNING: some plist formats will be unsupported")
+        import plistlib as FoundationPlist
 elif is_windows():
     try:
         import plistlib as FoundationPlist
     except ImportError:
-        print(
-        "WARNING: Failed 'import plistlib as FoundationPlist'"
-        )
+        log("WARNING: Failed 'import plistlib as FoundationPlist'")
 
 # If any recipe fails during 'autopkg run', return this exit code
 RECIPE_FAILED_CODE = 70
@@ -691,8 +688,7 @@ def get_search_dirs():
 def get_override_dirs():
     """Return override dirs from preferences or default list"""
     default = ["~/Library/AutoPkg/RecipeOverrides"]
-    if is_windows():
-        default = ["%APPDATA%\AutoPkg\RecipeOverrides"]
+
     dirs = get_pref("RECIPE_OVERRIDE_DIRS")
     if isinstance(dirs, basestring):
         # convert a string to a list
@@ -827,7 +823,7 @@ def repo_delete(argv):
         # now remove the repo files
         try:
             if is_windows():
-                # RECIPE_REPOS needs a special treatment on Windows
+                # print("repo_path: %s\n" % repo_path)
                 del_pref_win("RECIPE_REPOS", repo_path)
                 # we need to remove readonly, hidden and system bits
                 os.system('attrib.exe -r -h -s ' + repo_path + '\\*.* /S /D')
@@ -836,6 +832,7 @@ def repo_delete(argv):
             log_err("ERROR: Could not remove %s: %s" % (repo_path, err))
         else:
             # last, remove from RECIPE_REPOS
+            #print("repo_path: %s\n" % repo_path)
             del recipe_repos[repo_path]
 
     # save our updated RECIPE_REPOS and RECIPE_SEARCH_DIRS

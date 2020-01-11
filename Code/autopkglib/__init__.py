@@ -29,12 +29,12 @@ import subprocess
 import sys
 from distutils.version import LooseVersion
 
-#    try:
-#        import FoundationPlist
-#    except ImportError:
-#        print(unicode("WARNING: importing plistlib as FoundationPlist;").encode("UTF-8"))
-#        print(unicode("WARNING: some plist formats will be unsupported").encode("UTF-8"))
-#        import plistlib as FoundationPlist
+#try:
+#    import FoundationPlist
+#except ImportError:
+#    print(unicode("WARNING: importing plistlib as FoundationPlist;").encode("UTF-8"))
+#    print(unicode("WARNING: some plist formats will be unsupported").encode("UTF-8"))
+#    import plistlib as FoundationPlist
 
 
 class memoize(dict):
@@ -73,25 +73,27 @@ def is_linux():
 # pylint: disable=no-name-in-module
 if is_mac():
     try:
+        import FoundationPlist
         from Foundation import NSArray, NSDictionary, NSNumber
         from CoreFoundation import (
-            CFPreferencesAppSynchronize,
-            CFPreferencesCopyAppValue,
-            CFPreferencesCopyKeyList,
-            CFPreferencesSetAppValue,
-            kCFPreferencesAnyHost,
-            kCFPreferencesAnyUser,
-            kCFPreferencesCurrentUser,
-            kCFPreferencesCurrentHost,
+        CFPreferencesAppSynchronize,
+        CFPreferencesCopyAppValue,
+        CFPreferencesCopyKeyList,
+        CFPreferencesSetAppValue,
+        kCFPreferencesAnyHost,
+        kCFPreferencesAnyUser,
+        kCFPreferencesCurrentUser,
+        kCFPreferencesCurrentHost,
         )
     except ImportError:
         print(
-            "WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
+        "WARNING: Failed 'from Foundation import NSArray, NSDictionary' in " + __name__
         )
         print(
             "WARNING: Failed 'from CoreFoundation import "
             "CFPreferencesAppSynchronize, ...' in " + __name__
         )
+
 if is_windows():
     import _winreg
     import plistlib as FoundationPlist
@@ -104,6 +106,7 @@ if is_windows():
 
 BUNDLE_ID = "com.github.autopkg"
 BUNDLE_REG = "Software\AutoPkg"
+
 RE_KEYREF = re.compile(r"%(?P<key>[a-zA-Z_][a-zA-Z_0-9]*)%")
 
 
@@ -126,6 +129,10 @@ class Preferences(object):
         # If we're on macOS, read in the preference domain first.
         if is_mac():
             self.prefs = self._get_macos_prefs()
+        # If we're on Windows, read the registry key first.
+        if is_windows():
+            self.prefs = self._get_windows_prefs()
+            # self.prefs = self._get_macos_prefs()
 
     def _parse_json_or_plist_file(self, file_path):
         """Parse the file. Start with plist, then JSON."""
@@ -133,7 +140,6 @@ class Preferences(object):
             data = FoundationPlist.readPlist(file_path)
             self.type = "plist"
             self.file_path = file_path
-            return data
             return data
         except Exception:
             pass
@@ -193,6 +199,141 @@ class Preferences(object):
                     prefs[key] = self._get_macos_pref(key)
         return prefs
 
+    def _get_windows_prefs_tst(self, key):
+        # def get_pref_win(key, domain=get_domain()):
+        # Change: Input muss der Key sein, wie Vorgaengerversion! repath / BUNDLE_REG muss direkt in function gesetzt werden.
+        """Return a single pref value (or None) from the Windows preferences."""
+        print("key: %s\n" % self)
+        key = 'RECIPE_REPOS'
+        try:		
+            if key == "RECIPE_REPOS":
+                value = {}
+                new_domain = os.path.join(BUNDLE_REG, key)
+                reg_key = _winreg.OpenKey(
+                    _winreg.HKEY_CURRENT_USER,
+                    new_domain
+                )
+                i = 0
+                while True:
+                    try:
+                        (key_path, url_value, type) = _winreg.EnumValue(reg_key, i)
+                        value[key_path] = {'URL': url_value}
+                        i += 1
+                    except WindowsError:
+                        break
+                return value
+        except WindowsError as e:
+                # If we can't access the registry key, assume None
+                return None	
+        try:
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                BUNDLE_REG
+            )
+            raw_value = _winreg.QueryValueEx(reg_key, key)[0]
+            _winreg.CloseKey(reg_key)
+            # Check for expansions in here
+            if isinstance(raw_value, list):
+                value = []
+                # We have to expand each of the inside values
+                for val in raw_value:
+                    value.append(os.path.expandvars(val))
+            elif isinstance(raw_value, basestring):
+                # Strings can be freely expanded, even if they don't contain
+                # expansion variables
+                value = os.path.expandvars(raw_value)
+            else:
+                # Probably an int or bool
+                value = raw_value
+            return value
+        except WindowsError as e:
+            # If we can't access the registry key, assume None
+            return None
+
+    def _get_windows_pref(self, key):
+        """Return a single pref value (or None) from the Windows preferences."""
+        try:		
+            if key == "RECIPE_REPOS":
+                value = {}
+                new_domain = os.path.join(BUNDLE_REG, key)
+                reg_key = _winreg.OpenKey(
+                    _winreg.HKEY_CURRENT_USER,
+                    new_domain
+                )
+                i = 0
+                while True:
+                    try:
+                        (key_path, url_value, type) = _winreg.EnumValue(reg_key, i)
+                        value[key_path] = {'URL': url_value}
+                        i += 1
+                    except WindowsError:
+                        break
+                return value
+        except WindowsError as e:
+                # If we can't access the registry key, assume None
+                return None	
+        try:
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                BUNDLE_REG
+            )
+            raw_value = _winreg.QueryValueEx(reg_key, key)[0]
+            _winreg.CloseKey(reg_key)
+            # Check for expansions in here
+            if isinstance(raw_value, list):
+                value = []
+                # We have to expand each of the inside values
+                for val in raw_value:
+                    value.append(os.path.expandvars(val))
+            elif isinstance(raw_value, basestring):
+                # Strings can be freely expanded, even if they don't contain
+                # expansion variables
+                value = os.path.expandvars(raw_value)
+            else:
+                # Probably an int or bool
+                value = raw_value
+            return value
+        except WindowsError as e:
+            # If we can't access the registry key, assume None
+            return None
+
+    def _get_windows_prefs(self):
+        """Get all preferences from the AutoPkg registry key."""
+        # Create a dictionary of a registry key.
+        reg_dict = {}
+        try:
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                BUNDLE_REG
+            )
+            i = 0
+            while True:
+                # We'll index each subkey one at a time
+                try:
+                    (keyname, value, type) = _winreg.EnumValue(reg_key, i)
+                    reg_dict[keyname] = value
+                    i += 1
+                except WindowsError:
+                    # We've run out of subkeys to index
+                    break
+            # Now get all the subfolders
+            i = 0
+            while True:
+                try:
+                    subkeyname = _winreg.EnumKey(reg_key, i)
+                    new_domain = os.path.join(BUNDLE_REG, subkeyname)
+                    # Recursively call this function for nested subkeys
+                    # reg_dict[subkeyname] = self._get_windows_prefs(self)
+                    i += 1
+                except WindowsError:
+                    # We've run out of subfolders to index
+                    break
+            reg_dict['RECIPE_REPOS'] = {'URL': 'https://github.com/autopkg/hansen-m-recipes'}
+            return reg_dict
+        except WindowsError as e:
+            raise ProcessorError(
+                "Unable to open registry hive: %s" % e
+            )
     def _set_macos_pref(self, key, value):
         """Sets a preference for domain"""
         try:
@@ -202,6 +343,63 @@ class Preferences(object):
         except Exception as err:
             raise PreferenceError("Could not set %s preference: %s" % (key, err))
 
+    def _set_windows_pref(self, key, value):
+        """Set a value for a Windows registry key."""
+        try:
+            reg_key = _winreg.OpenKey(
+                _winreg.HKEY_CURRENT_USER,
+                BUNDLE_REG,
+                0,
+                _winreg.KEY_WRITE
+            )
+        except WindowsError as e:
+            # If we can't open the key, try creating it!
+            try:
+                reg_key = _winreg.CreateKey(
+                    _winreg.HKEY_CURRENT_USER,
+                    BUNDLE_REG
+                    )
+            except WindowsError as e:
+                raise ProcessorError(
+                    "Unable to open key: %s" % e
+                )
+        try:
+            key_type = _winreg.REG_NONE
+            if isinstance(value, dict):
+                # This special case code for RECIPE_REPOS
+                # Normally, RECIPE_REPOS is an array of dictionaries with a key of
+                # the folder path on disk to a repo, and the value is another
+                # dictionary, whose key is always "URL" and the value is the URL of
+                # the git repo.
+                new_domain = os.path.join(BUNDLE_REG, os.path.basename(key))
+                new_dict = {}
+                # Because dictionaries aren't a thing in the registry, we have to
+                # create a subkey instead. The subkey will be RECIPE_REPOS, but
+                # instead of a dictionary containing a key, "URL" and the URL,
+                # we're just going to map the absolute path on disk to the URL
+                # directly as a key-value pair in the subkey.
+                # To do this, we create a new simple dictionary mapping.
+                # There's probably a more efficient way to do this.
+                for (k, v) in value.iteritems():
+                    new_dict[k] = v['URL']
+                for (k, v) in new_dict.iteritems():
+                    # Now that we have simple key-value pairs, we can create each
+                    # key individually.
+                    _set_windows_pref(k, v, new_domain)
+                return
+            if isinstance(value, list):
+                key_type = _winreg.REG_MULTI_SZ
+            elif isinstance(value, basestring):
+                key_type = _winreg.REG_SZ
+            elif isinstance(value, int) or isinstance(value, bool):
+                key_type = _winreg.REG_DWORD
+            _winreg.SetValueEx(reg_key, key, 0, key_type, value)
+            _winreg.CloseKey(reg_key)
+        except (WindowsError, TypeError) as e:
+            raise PreferenceError(
+                "Unable to set %s key to value %s: %s" % (
+                    key, value, e)
+            )
     def read_file(self, file_path):
         """Read in a file and add the key/value pairs into preferences."""
         # Determine type or file: plist or json
@@ -255,6 +453,9 @@ class Preferences(object):
         # On macOS, write it back to preferences domain if we didn't use a file
         if is_mac() and self.type is None:
             self._set_macos_pref(key, value)
+        # On Windows, write it back to the registry, if we didn't use a file.
+        elif is_windows() and self.type is None:
+            self._set_windows_pref(key, value)
         elif self.file_path:
             self.write_file()
 
@@ -269,14 +470,13 @@ def get_pref(key):
         return globalPreferences.get_pref(key)
     if is_windows():
         return get_pref_win(key, domain=BUNDLE_REG)
-
 def set_pref(key, value):
     """Sets a preference for domain"""
     if is_mac():
         globalPreferences.set_pref(key, value)
+
     if is_windows():
         return set_pref_win(key, value, domain=BUNDLE_REG)
-
 def get_all_prefs():
     """Return a dict (or an empty dict) with the contents of all
     preferences in the domain."""
@@ -455,7 +655,6 @@ def del_pref_win(key, value, domain=BUNDLE_REG):
         raise PreferenceError(
             "Unable to delete value: %s" % value
         )
-
 def log(msg, error=False):
     """Message logger, prints to stdout/stderr."""
     if error:
@@ -573,38 +772,9 @@ def update_data(a_dict, key, value):
     a_dict[key] = do_variable_substitution(value)
 
 
-def curl_cmd():
-    """Returns a path to a curl binary, priority in the order below.
-    Returns None if none found.
-    1. app pref 'CURL_PATH'
-    2. a 'curl' binary that can be found in the PATH environment variable
-    3. '/usr/bin/curl'
-    """
-
-    def is_executable(exe_path):
-        """Is exe_path executable?"""
-        return os.path.exists(exe_path) and os.access(exe_path, os.X_OK)
-
-    curl_path_pref = get_pref("CURL_PATH")
-    if curl_path_pref:
-        if is_executable(curl_path_pref):
-            # take a CURL_PATH pref
-            return curl_path_pref
-        else:
-            log_err(
-                "WARNING: Curl path given in the 'CURL_PATH' preference:'%s' "
-                "either doesn't exist or is not executable! Falling back "
-                "to one set in PATH, or /usr/bin/curl." % curl_path_pref
-            )
-    for path_env in os.environ["PATH"].split(":"):
-        curlbin = os.path.join(path_env, "curl")
-        if is_executable(curlbin):
-            # take the first 'curl' in PATH that we find
-            return curlbin
-    if is_executable("/usr/bin/curl"):
-        # fall back to /usr/bin/curl
-        return "/usr/bin/curl"
-    return None
+def is_executable(exe_path):
+    """Is exe_path executable?"""
+    return os.path.exists(exe_path) and os.access(exe_path, os.X_OK)
 
 
 # Processor and ProcessorError base class definitions
@@ -802,8 +972,8 @@ class AutoPackager(object):
         # Check for MinimumAutopkgVersion
         if "MinimumVersion" in recipe.keys():
             if not version_equal_or_greater(
-                #self.env["AUTOPKG_VERSION"], recipe ("MinimumVersion")
-                self.env["AUTOPKG_VERSION"], recipe ["MinimumVersion"]
+                self.env["AUTOPKG_VERSION"], recipe.get("MinimumVersion")
+                #self.env["AUTOPKG_VERSION"], recipe ["MinimumVersion"]
             ):
                 raise AutoPackagerError(
                     "Recipe (or a parent recipe) requires at least autopkg "
@@ -845,9 +1015,12 @@ class AutoPackager(object):
         """Process a recipe."""
         identifier = self.get_recipe_identifier(recipe)
         # define a cache/work directory for use by the recipe
+        # cache_dir = self.env.get("CACHE_DIR") or os.path.expanduser(
         cache_dir = os.path.expandvars(self.env.get("CACHE_DIR")) or os.path.expanduser(
+
             "~/Library/AutoPkg/Cache"
         )
+        # self.env["RECIPE_CACHE_DIR"] = os.path.join(cache_dir, identifier)
         self.env["RECIPE_CACHE_DIR"] = os.path.expandvars(os.path.join(cache_dir, identifier))
 
         recipe_input_dict = {}

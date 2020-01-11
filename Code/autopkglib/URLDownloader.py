@@ -1,5 +1,6 @@
 #!/usr/bin/python
 #
+# Refactoring 2018 Michal Moravec
 # Copyright 2015 Greg Neagle
 #
 # Inital Windows support by Nick McSpadden, 2018
@@ -17,51 +18,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# 20190929 Nick Heim: Adaption for Windows.
+# 20191105 Nick Heim: Port Windows adaption to V1.3.
+# 20200110 Nick Heim: Adapt to the URLGetter rebuild in V1.4.1
+
 """See docstring for URLDownloader class"""
 
 import os.path
-import re
-import subprocess
 import tempfile
-import time
 
-from autopkglib import BUNDLE_ID, Processor, ProcessorError, is_mac, is_windows
+from autopkglib import BUNDLE_ID, ProcessorError, is_mac, is_windows
+from autopkglib.URLGetter import URLGetter
 
 if is_mac():
     import xattr
 
 if is_windows():
     from autopkglib.pyads import pyads
-__all__ = ["URLDownloader"]
-
-# XATTR names for Etag and Last-Modified headers
-XATTR_ETAG = "%s.etag" % BUNDLE_ID
-XATTR_LAST_MODIFIED = "%s.last-modified" % BUNDLE_ID
-
-
-def getxattr(pathname, attr):
-    """Get a named xattr from a file. Return None if not present"""
-    if is_mac():
-        if attr in xattr.listxattr(pathname):
-            return xattr.getxattr(pathname, attr)
-
-        return None
-    if is_windows():
-        handler = pyads.ADS(pathname)
-        if handler.has_streams() and attr in handler.init_streams():
-            return handler.get_stream_content(attr)
-
-        return None
-
-
-def setxattr(pathname, attr, content):
-    """Set an xattr/named ADS on a file."""
-    if is_mac():
-        xattr.setxattr(pathname, attr, content)
-    if is_windows():
-        handler = pyads.ADS(pathname)
-        handler.add_stream_from_string(attr, content)
-
 
 def default_curl_path():
     """Return default curl path for platform."""
@@ -73,8 +47,10 @@ def default_curl_path():
         return "C:\\Program Files\\Git\\mingw64\\bin\\curl.exe"
         # we use the curl, which comes with git.
         # we should consider to use the CURL_PATH variable here.
+__all__ = ["URLDownloader"]
 
-class URLDownloader(Processor):
+
+class URLDownloader(URLGetter):
     """Downloads a URL to the specified download_dir using curl."""
 
     description = __doc__
@@ -104,6 +80,21 @@ class URLDownloader(Processor):
             "required": False,
             "description": "Filename to override the URL's tail.",
         },
+        "prefetch_filename": {
+            "default": False,
+            "required": False,
+            "description": (
+                "If True, URLDownloader attempts to determine filename from HTTP "
+                "headers downloaded before the file itself. 'prefetch_filename' "
+                "overrides 'filename' option. Filename is determined from the first "
+                "available source of information in this order:\n"
+                "\t1. Content-Disposition header\n"
+                "\t2. Location header\n"
+                "\t3. 'filename' option (if set)\n"
+                "\t4. last part of 'url'.  \n"
+                "'prefetch_filename' is useful for URLs with redirects."
+            ),
+        },
         "CHECK_FILESIZE_ONLY": {
             "default": False,
             "required": False,
@@ -128,10 +119,10 @@ class URLDownloader(Processor):
         },
         "CURL_PATH": {
             "required": False,
+            # "default": "/usr/bin/curl",
             "default": default_curl_path(),
-
-            "description": ("Path to curl binary. Defaults to %s." %
-                default_curl_path)
+            # "description": "Path to curl binary. Defaults to /usr/bin/curl.",
+            "description": ("Path to curl binary. Defaults to %s." % default_curl_path),
         },
     }
     output_variables = {
@@ -151,58 +142,54 @@ class URLDownloader(Processor):
         },
     }
 
-    def main(self):
-        # if not is_mac():
-        #    raise ProcessorError("This processor is Mac-only!")
-        # clear any pre-exising summary result
-        if "url_downloader_summary_result" in self.env:
-            del self.env["url_downloader_summary_result"]
-
-        self.env["last_modified"] = ""
-        self.env["etag"] = ""
-        existing_file_size = None
-
-        if "PKG" in self.env:
-            self.env["pathname"] = os.path.expanduser(self.env["PKG"])
-            self.env["download_changed"] = True
-            self.output("Given %s, no download needed." % self.env["pathname"])
-            return
-
-        if "filename" not in self.env:
-            # Generate filename.
-            filename = self.env["url"].rpartition("/")[2]
-        else:
-            filename = self.env["filename"]
-        download_dir = os.path.expandvars(self.env.get("download_dir") or os.path.join(
-            self.env["RECIPE_CACHE_DIR"], "downloads"
-        ))
-        pathname = os.path.join(download_dir, filename)
-        # Save pathname to environment
-        self.env["pathname"] = pathname
-
-        # create download_dir if needed
-        if not os.path.exists(download_dir):
-            try:
-                os.makedirs(download_dir)
-            except OSError as err:
-                raise ProcessorError(
-                    "Can't create %s: %s" % (download_dir, err.strerror)
-                )
-
-        # Create a temp file
-        temporary_file = tempfile.NamedTemporaryFile(dir=download_dir, delete=False)
-        pathname_temporary = temporary_file.name
-        # Set permissions on the temp file as curl would set for a newly-downloaded
-        # file. NamedTemporaryFile uses mkstemp(), which sets a mode of 0600, and
-        # this can cause issues if this item is eventually copied to a Munki repo
-        # with the same permissions and the file is inaccessible by (for example)
-        # the webserver.
+    def getxattr(self, attr):
+        """Get a named xattr from a file. Return None if not present"""
         if is_mac():
-            os.chmod(pathname_temporary, 0o644)
+            if attr in xattr.listxattr(self.env["pathname"]):
+                return xattr.getxattr(self.env["pathname"], attr)
+            return None
 
-        # construct curl command.
+        if is_windows():
+            handler = pyads.ADS(self.env["pathname"])
+            if handler.has_streams() and attr in handler.init_streams():
+                return handler.get_stream_content(attr)
+
+            return None
+
+    def setxattr(self, attr, content):
+        """Set an xattr/named ADS on a file."""
+        if is_mac():
+            xattr.setxattr(self.env["pathname"], attr, content)
+        if is_windows():
+            handler = pyads.ADS(self.env["pathname"])
+            handler.add_stream_from_string(attr, content)
+
+# def getxattr(pathname, attr):
+    # """Get a named xattr from a file. Return None if not present"""
+    # if is_mac():
+        # if attr in xattr.listxattr(pathname):
+            # return xattr.getxattr(pathname, attr)
+
+        # return None
+    # if is_windows():
+        # handler = pyads.ADS(pathname)
+        # if handler.has_streams() and attr in handler.init_streams():
+            # return handler.get_stream_content(attr)
+
+        # return None
+
+
+# def setxattr(pathname, attr, content):
+    # """Set an xattr/named ADS on a file."""
+    # if is_mac():
+        # xattr.setxattr(pathname, attr, content)
+    # if is_windows():
+        # handler = pyads.ADS(pathname)
+        # handler.add_stream_from_string(attr, content)
+    def prepare_base_curl_cmd(self):
+        """Assemble base curl command and return it."""
         curl_cmd = [
-            self.env["CURL_PATH"],
+            self.curl_binary(),
             "--silent",
             "--show-error",
             "--no-buffer",
@@ -214,125 +201,123 @@ class URLDownloader(Processor):
             "--location",
             "--url",
             self.env["url"],
-            "--output",
-            pathname_temporary,
         ]
 
-        if "request_headers" in self.env:
-            headers = self.env["request_headers"]
-            for header, value in headers.items():
-                curl_cmd.extend(["--header", "%s: %s" % (header, value)])
+        return curl_cmd
 
-        if "curl_opts" in self.env:
-            for item in self.env["curl_opts"]:
-                curl_cmd.extend([item])
+    def prepare_download_curl_cmd(self, pathname_temporary):
+        """Assemble file download curl command and return it."""
 
-        # if file already exists and the size is 0, discard it and download
-        # again
-        if os.path.exists(pathname) and os.path.getsize(pathname) == 0:
-            os.remove(pathname)
+        curl_cmd = self.prepare_base_curl_cmd()
+        curl_cmd.extend(["--output", pathname_temporary])
+
+        self.add_curl_common_opts(curl_cmd)
+
+        # if file already exists and the size is 0, discard it and download again
+        if (
+            os.path.exists(self.env["pathname"])
+            and os.path.getsize(self.env["pathname"]) == 0
+        ):
+            os.remove(self.env["pathname"])
 
         # if file already exists, add some headers to the request
         # so we don't retrieve the content if it hasn't changed
-        if os.path.exists(pathname):
-            existing_file_size = os.path.getsize(pathname)
-            etag = getxattr(pathname, XATTR_ETAG)
-            last_modified = getxattr(pathname, XATTR_LAST_MODIFIED)
+        if os.path.exists(self.env["pathname"]):
+            self.existing_file_size = os.path.getsize(self.env["pathname"])
+            etag = self.getxattr(self.xattr_etag)
+            last_modified = self.getxattr(self.xattr_last_modified)
             if etag:
-                curl_cmd.extend(["--header", "If-None-Match: %s" % etag])
+                curl_cmd.extend(["--header", "If-None-Match: {}".format(etag)])
             if last_modified:
-                curl_cmd.extend(["--header", "If-Modified-Since: %s" % last_modified])
+                curl_cmd.extend(
+                    ["--header", "If-Modified-Since: {}".format(last_modified)]
+                )
 
-        # Open URL.
-        proc = subprocess.Popen(
-            curl_cmd,
-            shell=False,
-            bufsize=1,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        return curl_cmd
+
+
+
+
+    def clear_vars(self):
+        """Clear and initializace variables"""
+        # Delete summary result if exists
+        if "url_downloader_summary_result" in self.env:
+            del self.env["url_downloader_summary_result"]
+
+        # XATTR names for Etag and Last-Modified headers
+        self.xattr_etag = "{}.etag".format(BUNDLE_ID)
+        self.xattr_last_modified = "{}.last-modified".format(BUNDLE_ID)
+
+        self.env["last_modified"] = ""
+        self.env["etag"] = ""
+        self.existing_file_size = None
+
+    def prefetch_filename(self):
+        """Atempt to find filename in HTTP headers."""
+        curl_cmd = self.prepare_base_curl_cmd()
+        curl_cmd.extend(["--head"])
+
+        raw_headers = self.download_with_curl(curl_cmd)
+        header = self.parse_headers(raw_headers)
+
+        if "filename=" in header.get("content-disposition", ""):
+            filename = header["content-disposition"].rpartition("filename=")[2]
+        elif header.get("http_redirected", None):
+            filename = header["http_redirected"].rpartition("/")[2]
+        else:
+            return None
+
+        return filename
+
+    def get_filename(self):
+        """Obtain filename from PKG variable or URL."""
+        if "PKG" in self.env:
+            self.env["pathname"] = os.path.expanduser(self.env["PKG"])
+            self.env["download_changed"] = True
+            self.output("Given {}, no download needed.".format(self.env["pathname"]))
+            return None
+
+        if self.env.get("prefetch_filename", False):
+            filename = self.prefetch_filename()
+            if filename:
+                return filename
+
+        if "filename" in self.env:
+            filename = self.env["filename"]
+        else:
+            # Generate filename from URL.
+            filename = self.env["url"].rpartition("/")[2]
+
+        return filename
+
+    def get_download_dir(self):
+        """Create download dir and return its path."""
+        download_dir = self.env.get("download_dir") or os.path.join(
+            self.env["RECIPE_CACHE_DIR"], "downloads"
         )
-
-        donewithheaders = False
-        maxheaders = 15
-        header = {}
-        header["http_result_code"] = "000"
-        header["http_result_description"] = ""
-        while True:
-            if not donewithheaders:
-                info = proc.stdout.readline().strip("\r\n")
-                if info.startswith("HTTP/"):
-                    try:
-                        header["http_result_code"] = info.split(None, 2)[1]
-                        header["http_result_description"] = info.split(None, 2)[2]
-                    except IndexError:
-                        pass
-                elif ": " in info:
-                    # got a header line
-                    part = info.split(None, 1)
-                    fieldname = part[0].rstrip(":").lower()
-                    try:
-                        header[fieldname] = part[1]
-                    except IndexError:
-                        header[fieldname] = ""
-                elif self.env["url"].startswith("ftp://"):
-                    part = info.split(None, 1)
-                    responsecode = part[0]
-                    if responsecode == "213":
-                        # This is the reply to curl's SIZE command on the file
-                        # We can map it to the HTTP content-length header
-                        try:
-                            header["content-length"] = part[1]
-                        except IndexError:
-                            pass
-                    elif responsecode.startswith("55"):
-                        header["http_result_code"] = "404"
-                        header["http_result_description"] = info
-                    elif responsecode == "150" or responsecode == "125":
-                        header["http_result_code"] = "200"
-                        header["http_result_description"] = info
-                        donewithheaders = True
-                elif info == "":
-                    # we got an empty line; end of headers (or curl exited)
-                    if header.get("http_result_code") in [
-                        "301",
-                        "302",
-                        "303",
-                        "307",
-                        "308",
-                    ]:
-                        # redirect, so more headers are coming.
-                        # Throw away the headers we've received so far
-                        header = {}
-                        header["http_result_code"] = "000"
-                        header["http_result_description"] = ""
-                    else:
-                        donewithheaders = True
-            else:
-                time.sleep(0.1)
-
-            if proc.poll() is not None:
-                # For small download files curl may exit before all headers
-                # have been parsed, don't immediately exit.
-                maxheaders -= 1
-                if donewithheaders or maxheaders <= 0:
-                    break
-
-        retcode = proc.poll()
-        if retcode:  # Non-zero exit code from curl => problem with download
-            curlerr = ""
+        if not os.path.exists(download_dir):
             try:
-                curlerr = proc.stderr.read().rstrip("\n")
-                curlerr = curlerr.split(None, 2)[2]
-            except IndexError:
-                pass
+                os.makedirs(download_dir)
+            except OSError as err:
+                raise ProcessorError(
+                    "Can't create {}: {}".format(download_dir, err.strerror)
+                )
+        return download_dir
 
-            raise ProcessorError("Curl failure: %s (exit code %s)" % (curlerr, retcode))
-        # On Windows, you must close the file handler before attempting
-        # to move the file or otherwise manipulate it.
-        if is_windows():
-            temporary_file.close()
+    def create_temp_file(self, download_dir):
+        """Create temporary file and return its path."""
+        temporary_file = tempfile.NamedTemporaryFile(dir=download_dir, delete=False)
+        pathname_temporary = temporary_file.name
+        # Set permissions on the temp file as curl would set for a newly-downloaded
+        # file. NamedTemporaryFile uses mkstemp(), which sets a mode of 0600, and
+        # this can cause issues if this item is eventually copied to a Munki repo
+        # with the same permissions and the file is inaccessible by (for example)
+        # the webserver.
+        os.chmod(pathname_temporary, 0o644)
+        return pathname_temporary
 
+    def download_changed(self, header):
+        """Check if downloaded file changed on server."""
         # If Content-Length header is present and we had a cached
         # file, see if it matches the size of the cached file.
         # Useful for webservers that don't provide Last-Modified
@@ -341,61 +326,100 @@ class URLDownloader(Processor):
             "CHECK_FILESIZE_ONLY"
         ]:
             size_header = header.get("content-length")
-            if size_header and int(size_header) == existing_file_size:
+            if size_header and int(size_header) == self.existing_file_size:
                 self.env["download_changed"] = False
                 self.output(
                     "File size returned by webserver matches that "
-                    "of the cached file: %s bytes" % size_header
+                    "of the cached file: {} bytes".format(size_header)
                 )
                 self.output(
                     "WARNING: Matching a download by filesize is a "
                     "fallback mechanism that does not guarantee "
                     "that a build is unchanged."
                 )
-                self.output("Using existing %s" % pathname)
-                return
+                self.output("Using existing {}".format(self.env["pathname"]))
+                return False
 
         if header["http_result_code"] == "304":
             # resource not modified
             self.env["download_changed"] = False
             self.output("Item at URL is unchanged.")
-            self.output("Using existing %s" % pathname)
+            self.output("Using existing {}".format(self.env["pathname"]))
+            return False
 
-            # Discard the temp file
-            os.remove(pathname_temporary)
+        return True
 
-            return
-
-        self.env["download_changed"] = True
-
-        # New resource was downloaded. Move the temporary download file
-        # to the pathname
-        if os.path.exists(pathname):
-            os.remove(pathname)
+    def move_temp_file(self, pathname_temporary):
+        """Move temporary download file to pathname."""
+        if os.path.exists(self.env["pathname"]):
+            os.remove(self.env["pathname"])
         try:
-            os.rename(pathname_temporary, pathname)
+            os.rename(pathname_temporary, self.env["pathname"])
         except OSError:
-            raise ProcessorError("Can't move %s to %s" % (pathname_temporary, pathname))
-
-        # save last-modified header if it exists
-        if header.get("last-modified"):
-            self.env["last_modified"] = header.get("last-modified")
-            setxattr(pathname, XATTR_LAST_MODIFIED, header.get("last-modified"))
-            self.output(
-                "Storing new Last-Modified header: %s" % header.get("last-modified")
+            raise ProcessorError(
+                "Can't move {} to {}".format(pathname_temporary, self.env["pathname"])
             )
 
-        # save etag if it exists
+    def store_headers(self, header):
+        """Store last-modified and etag headers in pathname xattr."""
+        if header.get("last-modified"):
+            self.env["last_modified"] = header.get("last-modified")
+            self.setxattr(
+                self.xattr_last_modified,
+                header.get("last-modified"),
+            )
+            self.output(
+                "Storing new Last-Modified header: {}".format(
+                    header.get("last-modified")
+                )
+            )
+
         self.env["etag"] = ""
         if header.get("etag"):
             self.env["etag"] = header.get("etag")
-            setxattr(pathname, XATTR_ETAG, header.get("etag"))
-            self.output("Storing new ETag header: %s" % header.get("etag"))
+            self.setxattr(self.xattr_etag, header.get("etag"))
+            self.output("Storing new ETag header: {}".format(header.get("etag")))
 
-        self.output("Downloaded %s" % pathname)
+    def main(self):
+        # if not is_mac():
+        #    raise ProcessorError("This processor is Mac-only!")
+
+        # Clear and initiazize data structures
+        self.clear_vars()
+
+        # Ensure existence of necessary files, directories and paths
+        filename = self.get_filename()
+        if filename is None:
+            return
+        download_dir = self.get_download_dir()
+        self.env["pathname"] = os.path.join(download_dir, filename)
+        pathname_temporary = self.create_temp_file(download_dir)
+
+        # Prepare curl command
+        curl_cmd = self.prepare_download_curl_cmd(pathname_temporary)
+
+        # Execute curl command and parse headers
+        raw_headers = self.download_with_curl(curl_cmd)
+        header = self.parse_headers(raw_headers)
+
+        if self.download_changed(header):
+            self.env["download_changed"] = True
+        else:
+            # Discard the temp file
+            os.remove(pathname_temporary)
+            return
+
+        # New resource was downloaded. Move the temporary download file to the pathname
+        self.move_temp_file(pathname_temporary)
+
+        # Save last-modified and etag headers to files xattr
+        self.store_headers(header)
+
+        # Generate output messages and variables
+        self.output("Downloaded {}".format(self.env["pathname"]))
         self.env["url_downloader_summary_result"] = {
             "summary_text": "The following new items were downloaded:",
-            "data": {"download_path": pathname},
+            "data": {"download_path": self.env["pathname"]},
         }
 
 

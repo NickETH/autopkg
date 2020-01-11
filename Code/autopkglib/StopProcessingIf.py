@@ -19,6 +19,7 @@
 # limitations under the License.
 # 20190328 Nick Heim: Adaption for Windows. Very basic so far. Looking for a better predicate class...
 # 20191105 Nick Heim: Port Windows adaption to V1.3.
+# 20200110 Nick Heim: Port Windows adaption to V1.4.1
 
 """See docstring for StopProcessingIf class"""
 
@@ -64,12 +65,10 @@ class StopProcessingIf(Processor):
             except Exception as err:
                 raise ProcessorError(
                     "Predicate error for '%s': %s" % (predicate_string, err)
-                    )
+                )
             result = predicate.evaluateWithObject_(self.env)
             self.output("(%s) is %s" % (predicate_string, result))
             return result
-
-
         elif is_windows():
             try:
                 download_changed = self.env.get('download_changed')
@@ -78,7 +77,6 @@ class StopProcessingIf(Processor):
             except Exception, err:
                 raise ProcessorError(
                     "Predicate error for '%s': %s"
-
                     % (predicate_string, err))
 
             self.output("(%s) is %s" % (predicate_string, result))

@@ -4,8 +4,6 @@
 #
 # Inital Windows support by Nick McSpadden, 2018
 # 
-# Port to actual level. Adapt the CURL path for Windows. Sept 2019, Nick Heim
-#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -17,9 +15,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 # 20190929 Nick Heim: Adaption for Windows. Very basic so far.
 # 20191105 Nick Heim: Port Windows adaption to V1.3.
-
+# 20200110 Nick Heim: Port Windows adaption to V1.4.1
 """See docstring for CodeSignatureVerifier class"""
 
 import os.path

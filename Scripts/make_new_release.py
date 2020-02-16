@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Script to run the AutoPkg GitHub release workflow as outlined here:
 # https://github.com/autopkg/autopkg/wiki/Packaging-AutoPkg-For-Release-on-GitHub
@@ -15,21 +15,25 @@
 # handling.
 """See docstring for main() function"""
 
-from __future__ import print_function
 
 import json
 import optparse
 import os
 import plistlib
 import re
+import ssl
 import subprocess
 import sys
 import tempfile
-import urllib2
+import urllib.error
+import urllib.parse
+import urllib.request
 from distutils.version import LooseVersion
 from pprint import pprint
 from shutil import rmtree
 from time import strftime
+
+import certifi
 
 
 class GitHubAPIError(BaseException):
@@ -54,24 +58,26 @@ def api_call(
           unless json_data is False.
     additional_headers: a dict of additional headers for the API call"""
     if data and json_data:
-        data = json.dumps(data, ensure_ascii=False)
+        data = json.dumps(data, ensure_ascii=False).encode()
     headers = {
         "Accept": "application/vnd.github.v3+json",
-        "Authorization": "token %s" % token,
+        "Authorization": f"token {token}",
     }
     if additional_headers:
-        for header, value in additional_headers.items():
+        for header, value in list(additional_headers.items()):
             headers[header] = value
 
-    req = urllib2.Request(baseurl + endpoint, headers=headers)
+    req = urllib.request.Request(baseurl + endpoint, headers=headers)
     try:
-        results = urllib2.urlopen(req, data=data)
-    except urllib2.HTTPError as err:
+        context = ssl.SSLContext()
+        context.load_verify_locations(certifi.where())
+        results = urllib.request.urlopen(req, data=data, context=context)
+    except urllib.error.HTTPError as err:
         print("HTTP error making API call!", file=sys.stderr)
         print(err, file=sys.stderr)
         error_json = err.read()
         error = json.loads(error_json)
-        print("API message: %s" % error["message"], file=sys.stderr)
+        print(f"API message: {error['message']}", file=sys.stderr)
         sys.exit(1)
     if results:
         try:
@@ -93,7 +99,7 @@ def main():
     API token:
     You'll need an API OAuth token with push access to the repo. You can create a
     Personal Access Token in your user's Account Settings:
-    https://github.com/settings/applications
+    https://github.com/settings/tokens
 
     autopkgserver components:
     This script does not perform the bootstrap steps performed by the install.sh
@@ -106,7 +112,7 @@ def main():
     parser.add_option(
         "-v",
         "--next-version",
-        help=("Next version to which AutoPkg will be " "incremented. Required."),
+        help=("Next version to which AutoPkg will be incremented. Required."),
     )
     parser.add_option(
         "-p",
@@ -136,6 +142,19 @@ def main():
             "'autopkg/autopkg'."
         ),
     )
+    parser.add_option(
+        "-b",
+        "--autopkg-branch",
+        help=("A specific branch of AutoPkg repo clone. Otherwise, clone master."),
+    )
+    parser.add_option(
+        "-r",
+        "--recipe-branch",
+        help=(
+            "A specific branch of autopkg-recipes repo clone. "
+            "Otherwise, clone master."
+        ),
+    )
 
     opts = parser.parse_args()[0]
     if not opts.next_version:
@@ -144,78 +163,82 @@ def main():
         sys.exit("Option --token is required!")
     next_version = opts.next_version
     if opts.dry_run:
-        print("Running in 'dry-run' mode..")
+        print("** Running in 'dry-run' mode..")
     publish_user, publish_repo = opts.user_repo.split("/")
     token = opts.token
-
     # ensure our OAuth token works before we go any further
-    api_call("/users/%s" % publish_user, token)
+    print("** Verifying OAuth token")
+    api_call(f"/users/{publish_user}", token)
 
     # set up some paths and important variables
     autopkg_root = tempfile.mkdtemp()
     version_plist_path = os.path.join(autopkg_root, "Code/autopkglib/version.plist")
     changelog_path = os.path.join(autopkg_root, "CHANGELOG.md")
 
+    git_cmd = ["git", "clone"]
+    if opts.autopkg_branch:
+        git_cmd.extend(["--branch", opts.autopkg_branch])
+    git_cmd.extend([f"https://github.com/{publish_user}/{publish_repo}", autopkg_root])
     # clone Git master
-    subprocess.check_call(
-        [
-            "git",
-            "clone",
-            "https://github.com/%s/%s" % (publish_user, publish_repo),
-            autopkg_root,
-        ]
-    )
+    print("** Clone git master")
+    subprocess.check_call(git_cmd)
     os.chdir(autopkg_root)
 
     # get the current autopkg version
     try:
-        plist = plistlib.readPlist(version_plist_path)
+        with open(version_plist_path, "rb") as f:
+            plist = plistlib.load(f)
         current_version = plist["Version"]
     except BaseException:
         sys.exit("Couldn't determine current autopkg version!")
-    print("Current AutoPkg version: %s" % current_version)
+    print(f"** Current AutoPkg version: {current_version}")
     if LooseVersion(next_version) <= LooseVersion(current_version):
         sys.exit(
-            "Next version (gave %s) must be greater than current version %s!"
-            % (next_version, current_version)
+            f"Next version (gave {next_version}) must be greater than current version "
+            f"{current_version}!"
         )
 
-    tag_name = "v%s" % current_version
+    print("** Checking published releases")
+    tag_name = f"v{current_version}"
     if opts.prerelease:
         tag_name += opts.prerelease
     published_releases = api_call(
-        "/repos/%s/%s/releases" % (publish_user, publish_repo), token
+        f"/repos/{publish_user}/{publish_repo}/releases", token
     )
     for rel in published_releases:
         if rel["tag_name"] == tag_name:
             print(
                 "There's already a published release on GitHub with the tag "
-                "{0}. It should first be manually removed. "
+                "{}. It should first be manually removed. "
                 "Release data printed below:".format(tag_name),
                 file=sys.stderr,
             )
             pprint(rel, stream=sys.stderr)
             sys.exit()
 
+    print("** Writing date into CHANGELOG.md")
     # write today's date in the changelog
     with open(changelog_path, "r") as fdesc:
         changelog = fdesc.read()
     release_date = strftime("(%B %d, %Y)")
     new_changelog = re.sub(r"\(Unreleased\)", release_date, changelog)
-    new_changelog = re.sub("...HEAD", "...v%s" % current_version, new_changelog)
+    new_changelog = re.sub("...HEAD", f"...v{current_version}", new_changelog)
     with open(changelog_path, "w") as fdesc:
         fdesc.write(new_changelog)
 
+    print("** Creating git commit")
     # commit and push the new release
     subprocess.check_call(["git", "add", changelog_path])
     subprocess.check_call(
-        ["git", "commit", "-m", "Release version %s." % current_version]
+        ["git", "commit", "-m", f"Release version {current_version}."]
     )
     subprocess.check_call(["git", "tag", tag_name])
     if not opts.dry_run:
+        print("** Pushing git release")
         subprocess.check_call(["git", "push", "origin", "master"])
         subprocess.check_call(["git", "push", "--tags", "origin", "master"])
 
+    print("** Gathering release notes")
     # extract release notes for this new version
     notes_rex = r"(?P<current_ver_notes>\#\#\# \[%s\].+?)\#\#\#" % current_version
     match = re.search(notes_rex, new_changelog, re.DOTALL)
@@ -223,34 +246,42 @@ def main():
         sys.exit("Couldn't extract release notes for this version!")
     release_notes = match.group("current_ver_notes")
 
-    # run the actual AutoPkg.pkg recipe
     recipes_dir = tempfile.mkdtemp()
-    subprocess.check_call(
-        ["git", "clone", "https://github.com/autopkg/recipes", recipes_dir]
-    )
+    git_cmd = ["git", "clone"]
+    if opts.recipe_branch:
+        git_cmd.extend(["--branch", opts.recipe_branch])
+    git_cmd.extend(["https://github.com/autopkg/recipes", recipes_dir])
+    print("** Cloning autopkg-recipes")
+    subprocess.check_call(git_cmd)
+    os.chdir(autopkg_root)
+
+    print("** Running AutoPkgGitMaster recipe")
     # running using the system AutoPkg directory so that we ensure we're at the
     # minimum required version to run the AutoPkg recipe
+    print("**Running AutoPkgGitMaster.pkg")
     report_plist_path = tempfile.mkstemp()[1]
-    proc = subprocess.Popen(
+    parent_path = os.path.join(os.path.abspath(os.path.dirname(__file__)))
+    cmd = [
+        os.path.join(parent_path, "Code/autopkg"),
+        "run",
+        "-k",
+        "force_pkg_build=true",
+    ]
+    if opts.autopkg_branch:
+        cmd.extend(["-k", f"BRANCH={opts.autopkg_branch}"])
+    cmd.extend(
         [
-            "/Library/AutoPkg/autopkg",
-            "run",
-            "-k",
-            "force_pkg_build=true",
             "--search-dir",
             recipes_dir,
             "--report-plist",
             report_plist_path,
             "AutoPkgGitMaster.pkg",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        ]
     )
-    out, err = proc.communicate()
-    print(out)
-    print(err, file=sys.stderr)
+    subprocess.run(args=cmd, text=True, check=True)
     try:
-        report = plistlib.readPlist(report_plist_path)
+        with open(report_plist_path, "rb") as f:
+            report = plistlib.load(f)
     except BaseException as err:
         print(
             "Couldn't parse a valid report plist from the autopkg run!", file=sys.stderr
@@ -259,8 +290,9 @@ def main():
     os.remove(report_plist_path)
 
     if report["failures"]:
-        sys.exit("Recipe run error: %s" % report["failures"][0]["message"])
+        sys.exit(f"Recipe run error: {report['failures'][0]['message']}")
 
+    print("** Collecting package data")
     # collect pkg file data
     pkg_result = report["summary_results"]["pkg_creator_summary_result"]
     built_pkg_path = pkg_result["data_rows"][0]["pkg_path"]
@@ -277,26 +309,24 @@ def main():
     release_data["draft"] = False
     if opts.prerelease:
         release_data["prerelease"] = True
+        release_data["name"] += " Beta"
 
     # create the release
     if not opts.dry_run:
+        print("** Creating GitHub release")
         create_release = api_call(
-            "/repos/%s/%s/releases" % (publish_user, publish_repo),
-            token,
-            data=release_data,
+            f"/repos/{publish_user}/{publish_repo}/releases", token, data=release_data
         )
         if create_release:
             print("Release successfully created. Server response:")
             pprint(create_release)
             print()
 
+            print("** Uploading package as release asset")
             # upload the pkg as a release asset
             new_release_id = create_release["id"]
-            endpoint = "/repos/%s/%s/releases/%s/assets?name=%s" % (
-                publish_user,
-                publish_repo,
-                new_release_id,
-                pkg_filename,
+            endpoint = "/repos/{}/{}/releases/{}/assets?name={}".format(
+                publish_user, publish_repo, new_release_id, pkg_filename
             )
             upload_asset = api_call(
                 endpoint,
@@ -312,13 +342,14 @@ def main():
                 print()
 
     # increment version
-    print("Incrementing version to %s.." % next_version)
+    print(f"** Incrementing version to {next_version}..")
     plist["Version"] = next_version
-    plistlib.writePlist(plist, version_plist_path)
+    with open(version_plist_path, "wb") as f:
+        plistlib.dump(plist, f)
 
     # increment changelog
     new_changelog = (
-        "### [{0}](https://github.com/{1}/{2}/compare/v{3}...HEAD) (Unreleased)\n\n".format(
+        "### [{}](https://github.com/{}/{}/compare/v{}...HEAD) (Unreleased)\n\n".format(
             next_version, publish_user, publish_repo, current_version
         )
         + new_changelog
@@ -326,17 +357,19 @@ def main():
     with open(changelog_path, "w") as fdesc:
         fdesc.write(new_changelog)
 
+    print("** Creating commit for change increment")
     # commit and push increment
     subprocess.check_call(["git", "add", version_plist_path, changelog_path])
     subprocess.check_call(
-        ["git", "commit", "-m", "Bumping to v%s for development." % next_version]
+        ["git", "commit", "-m", f"Bumping to v{next_version} for development."]
     )
     if not opts.dry_run:
+        print("** Pushing commit to master")
         subprocess.check_call(["git", "push", "origin", "master"])
     else:
         print(
             "Ended dry-run mode. Final state of the AutoPkg repo can be "
-            "found at: %s" % autopkg_root
+            f"found at: {autopkg_root}"
         )
     # clean up
     rmtree(recipes_dir)

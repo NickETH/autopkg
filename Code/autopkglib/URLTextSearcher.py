@@ -1,5 +1,6 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
+# Refactoring 2018 Michal Moravec
 # Copyright 2015 Greg Neagle
 # Based on URLTextSearcher.py, Copyright 2014 Jesse Peterson
 #
@@ -17,18 +18,21 @@
 """See docstring for URLTextSearcher class"""
 
 import re
-import subprocess
 
-from autopkglib import Processor, ProcessorError
+from autopkglib import ProcessorError
+from autopkglib.URLGetter import URLGetter
+
+MATCH_MESSAGE = "Found matching text"
+NO_MATCH_MESSAGE = "No match found on URL"
 
 __all__ = ["URLTextSearcher"]
 
 
-class URLTextSearcher(Processor):
+class URLTextSearcher(URLGetter):
     """Downloads a URL using curl and performs a regular expression match
     on the text.
 
-    Requires version 0.2.9."""
+    Requires version 1.4."""
 
     input_variables = {
         "re_pattern": {
@@ -66,11 +70,6 @@ class URLTextSearcher(Processor):
             ),
             "required": False,
         },
-        "CURL_PATH": {
-            "required": False,
-            "default": "/usr/bin/curl",
-            "description": "Path to curl binary. Defaults to /usr/bin/curl.",
-        },
     }
     output_variables = {
         "result_output_var_name": {
@@ -85,37 +84,29 @@ class URLTextSearcher(Processor):
 
     description = __doc__
 
-    def get_url_and_search(self, url, re_pattern, headers=None, flags=None, opts=None):
-        """Get data from url and search for re_pattern"""
-        # pylint: disable=no-self-use
+    def prepare_curl_cmd(self):
+        """Assemble curl command and return it."""
+        curl_cmd = super().prepare_curl_cmd()
+        self.add_curl_common_opts(curl_cmd)
+        curl_cmd.append(self.env["url"])
+        return curl_cmd
+
+    def prepare_re_flags(self):
+        """Create flag varible for re.compile"""
         flag_accumulator = 0
-        if flags:
-            for flag in flags:
-                if flag in re.__dict__:
-                    flag_accumulator += re.__dict__[flag]
+        for flag in self.env.get("re_flags", {}):
+            if flag in re.__dict__:
+                flag_accumulator += re.__dict__[flag]
+        return flag_accumulator
 
-        re_pattern = re.compile(re_pattern, flags=flag_accumulator)
+    def re_search(self, content):
+        """Search for re_pattern in content"""
 
-        try:
-            cmd = [self.env["CURL_PATH"], "--location", "--compressed"]
-            if headers:
-                for header, value in headers.items():
-                    cmd.extend(["--header", "%s: %s" % (header, value)])
-            if opts:
-                for item in opts:
-                    cmd.extend([item])
-            cmd.append(url)
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (content, stderr) = proc.communicate()
-            if proc.returncode:
-                raise ProcessorError("Could not retrieve URL %s: %s" % (url, stderr))
-        except OSError:
-            raise ProcessorError("Could not retrieve URL: %s" % url)
-
+        re_pattern = re.compile(self.env["re_pattern"], flags=self.prepare_re_flags())
         match = re_pattern.search(content)
 
         if not match:
-            raise ProcessorError("No match found on URL: %s" % url)
+            raise ProcessorError(f"{NO_MATCH_MESSAGE}: {self.env['url']}")
 
         # return the last matched group with the dict of named groups
         return (match.group(match.lastindex or 0), match.groupdict())
@@ -123,15 +114,12 @@ class URLTextSearcher(Processor):
     def main(self):
         output_var_name = self.env["result_output_var_name"]
 
-        headers = self.env.get("request_headers", {})
+        # Prepare curl command
+        curl_cmd = self.prepare_curl_cmd()
 
-        flags = self.env.get("re_flags", {})
-
-        opts = self.env.get("curl_opts", [])
-
-        groupmatch, groupdict = self.get_url_and_search(
-            self.env["url"], self.env["re_pattern"], headers, flags, opts
-        )
+        # Execute curl command and search in content
+        content = self.download_with_curl(curl_cmd)
+        groupmatch, groupdict = self.re_search(content)
 
         # favor a named group over a normal group match
         if output_var_name not in groupdict.keys():
@@ -140,7 +128,7 @@ class URLTextSearcher(Processor):
         self.output_variables = {}
         for key in groupdict.keys():
             self.env[key] = groupdict[key]
-            self.output("Found matching text (%s): %s" % (key, self.env[key]))
+            self.output(f"{MATCH_MESSAGE} ({key}): {self.env[key]}")
             self.output_variables[key] = {
                 "description": "Matched regular expression group"
             }

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2019 Greg Neagle
 #
@@ -16,7 +16,6 @@
 """Processor that outputs a warning message. Intended to alert recipe users of
 upcoming removal of a recipe."""
 
-from __future__ import absolute_import
 
 import os
 

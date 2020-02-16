@@ -1,4 +1,180 @@
-### [1.3](https://github.com/autopkg/autopkg/compare/v1.2...HEAD) (Unreleased)
+### [2.0.3](https://github.com/autopkg/autopkg/compare/v2.0.2...HEAD) (Unreleased)
+
+### [2.0.2](https://github.com/autopkg/autopkg/compare/v2.0.1...v2.0.2) (February 05, 2020)
+
+CHANGES FROM RC2:
+- Fixed an encoding bug in the make_new_release script (https://github.com/autopkg/autopkg/commit/fca40526a3a19f3e208574be775fa7309244c0d5)
+- Removed some orphaned dead code (https://github.com/autopkg/autopkg/commit/c90e92b1988f347834ed4957cc9108c2b1eef44b)
+
+### [2.0 RC2](https://github.com/autopkg/autopkg/compare/2.0b3...v2.0.1) (January 31, 2020)
+
+CHANGES FROM RC1:
+- Fixed some processor docs (https://github.com/autopkg/autopkg/commit/3812ca12a44531c78c869e67fbbd84d7706b8a93)
+- Added in "APLooseVersion", loosely based on Munki's version comparison, to replace previous version comparison semantics. (https://github.com/autopkg/autopkg/commit/7c0676fdfe77f66f261b0df53ec5a792d31c5d3c)
+  - This MAY cause a change in behavior for some current version comparisons, but it no longer crashes when comparing
+    certain combinations of strings.
+
+### [2.0 RC1](https://github.com/autopkg/autopkg/compare/2.0b3...v2.0.1) (December 03, 2019)
+
+CHANGES FROM BETA 3:
+- Some fixes around URLGetter's behavior and callsites
+- `URLGetter.execute_curl()` was changed to use `subprocess.run()` instead of `Popen` (https://github.com/autopkg/autopkg/commit/facad8ce48cfb9766578d55823660feb177b3e80)
+- Update URLDownloader variable descriptions to show up better on the wiki (https://github.com/autopkg/autopkg/commit/079c606778a3a4795cd52e4f98a77f5479b36ea9)
+- URLGetter outputs the entire curl command when used with `-vvvv` verbosity (https://github.com/autopkg/autopkg/commit/7c24a05fd327d77f082875aaa70549f48d156802)
+- URLGetter now has a convenient `download_to_file(url, filename)` function, which makes
+it simple to download a file in a custom processor (this was backported to 1.4.1) (https://github.com/autopkg/autopkg/commit/2fac6955a124f268c96ff71a7d433da84242e6fb)
+- Fixed an extraneous socket close error in InstallFromDmg (hat tip to Allister B) (https://github.com/autopkg/autopkg/commit/c31789f8fe32e2f75167b5790e5a353c24904a76)
+- make_new_release.py produces more friendly console output indicating what stage it's on (https://github.com/autopkg/autopkg/commit/1373b31d407b1a2ae023256aa2d65ef165d5956)
+
+### [2.0b3](https://github.com/autopkg/autopkg/compare/12249273c23e9c52675ab947024c2ac505080049...2.0b3) (November 25, 2019)
+CHANGES FROM BETA 2:
+
+- Thanks to @MichalMMac's heroic efforts, URLGetter is now much easier for other processors to use. There are now two ways a custom processor can download things without needing to write any urllib logic:
+  - `URLGetter.download_with_curl(curl_command, text=True)` takes a curl command as an argument (a list of strings that is passed to subprocess). You can use this along with the other helper functions to arrange your own curl command with custom headers and arguments, and parse the output.
+  - `URLGetter.download(url, headers=None, text=False)` takes a URL (and optional headers) and returns the output of the curl command. You can use this to simply retrieve the results of requesting a web page (such as for URLTextSearcher).
+- In both cases, you can pass text mode to determine if you get straight text output.
+- All custom processors that need to make a web request of any kind in autopkg/recipes have been switched to using URLGetter's methods. No more urllib in processors!
+- Some minor formatting changes in the code itself
+- DmgMounter now handles APFS disk images (with SLAs/EULAs) (https://github.com/autopkg/autopkg/commit/4b77f6d5948a2f36258f4695f503513ec7671745)
+
+CHANGES FROM BETA 1:
+
+- The new URLGetter base Processor class has been merged in. It provides a new centralized way to handle fetching and downloading things from the web. In the future, more convenience functions will be added to allow any custom processor to easily fetch web resources without having to write their own urllib/web-handling code.
+- Failing to import a processor due to a Python syntax error (such as due to py2 vs. py3 imports) now has a more specific and clear error message (e52ae69)
+- Many, many, many bytes vs. string issues resolved in core processors
+- Copier now has a unit test, and produces some more useful output
+- autopkgserver shouldn't complain about socket descriptors anymore
+- isort now has a seed config that explicitly lists certain third party modules so that they're sorted at the top or bottom of import blocks correctly
+- All custom processors in autopkg-recipes now use certifi to set the base SSL certs so that urllib web requests work; this will be removed in the future once URLGetter's convenience functions are written
+
+CHANGES IN INITIAL 2.0 RELEASE:
+
+- FoundationPlist has been retired. plistlib in Python 3 should be used to handle all plist parsing.
+- All Python string interpolation should prefer the use of f-strings (formatted string literals).
+- All references to unicode vs. string types have been refactored to use Python 3's native byte strings whenever possible.
+- All unit tests were updated to Python 3.
+- All Python code now use a hardcoded path to the embedded Python framework. This path may change at a later time to incorporate a symlink, for easier cross-platform compatibility.
+
+KNOWN ISSUES:
+
+- There are likely still edge cases in the autopkg/recipes that slipped through testing, so please file issues if you find recipes that don't work as intended.
+
+
+### [2.0b1](https://github.com/autopkg/autopkg/compare/AutoPkg_1.x...12249273c23e9c52675ab947024c2ac505080049) (November 06, 2019)
+
+PYTHON 3
+
+This is the first beta release of a Python 3-only version of AutoPkg. It is *no longer
+compatible with Python 2*, and will indeed encounter syntax errors and failures if ran
+with Python 2.
+
+The release package has an included Python 3 framework that includes all necessary
+modules to run everything in AutoPkg core, and all of the recipes in autopkg-recipes.
+
+Aside from being a rewrite of the code, this release is feature-identical with release
+1.3.1.
+
+MAJOR HIGHLIGHTS OF THE PYTHON 3 CODE:
+
+- FoundationPlist has been retired. plistlib in Python 3 should be used to handle all
+  plist parsing.
+- All Python string interpolation should prefer the use of f-strings (formatted string
+  literals).
+- All references to unicode vs. string types have been refactored to use Python 3's
+  native byte strings whenever possible.
+- All unit tests were updated to Python 3.
+- All Python code now use a hardcoded path to the embedded Python framework. This path
+  may change at a later time to incorporate a symlink, for easier cross-platform
+  compatibility.
+
+KNOWN ISSUES:
+
+- Due to the change in the embedded Python framework, AutoPkg no longer works on other
+  platforms without calling the interpreter directly.
+- Using a Python-3 only AutoPkg with Python-2 custom processors in recipes outside of
+  the core autopkg-recipes repo are not guaranteed to work, and are most likely going to
+  fail hard. There will be a long path to updating all of these.
+- The JSS Importer is almost certainly not going to work until it's also updated.
+
+HOW TO USE THIS BETA RELEASE:
+
+Installing the release package will get you everything you need to run AutoPkg 2.0.
+
+However, the autopkg-recipes repo itself also has [a separate branch where all of the
+custom processors have been converted to Python 3](https://github.com/autopkg/recipes/tree/py2-to-3).
+In order to run any of the core recipes, you will need to switch to this branch.
+
+To do so, use the command line to checkout the correct branch:
+
+```
+cd ~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes
+git checkout py2-to-3
+```
+
+Then you should be able to run recipes as normal. You will need to update your trust
+info as nearly every custom processor has changed:
+```
+autopkg update-trust-info Firefox.munki
+autopkg update-trust-info MakeCatalogs.munki
+autopkg run -vv Firefox.munki MakeCatalogs.munki
+```
+
+HOW TO REPORT ISSUES:
+Use the "Beta Bug report" GitHub issue template to specifically label the issue as being
+beta only. Please make use of the template to convey all information possible in order
+to reproduce or diagnose the issue as clearly as possible.
+
+SETTING UP AUTOPKG MANUALLY:
+If you do not want to use the AutoPkg release installer, you can manually set up an
+AutoPkg 2.0 environment. Setup and place the AutoPkg files as you normally would:
+
+- Create /Library/AutoPkg/
+- Copy the contents of Code into /Library/AutoPkg/
+- Ensure correct file modes for the autopkgserver components:
+  `sudo chmod -R 755 /Library/AutoPkg/autopkgserver/`
+
+Build a relocatable python bundle:
+- Use the CONTRIBUTING guide's instructions on building a relocatable python bundle
+  that uses the `requirements.txt` file for pip
+- Move/copy the bundle into /Library/AutoPkg/Python3/Python.framework
+
+### [1.4.1](https://github.com/autopkg/autopkg/compare/v1.4...v1.4.1) (December 02, 2019)
+
+FIXES:
+* URLGetter now has a `download_to_file(url, filename)` function that can be used in
+custom processors. It simply downloads a URL to a specific filename, and raises a
+ProcessorError if it fails for any reason.
+
+### [1.4](https://github.com/autopkg/autopkg/compare/v1.3.1...v2.0.1) (December 03, 2019)
+
+FIXES:
+  * DmgMounter now correctly handles APFS disk images, especially with EULAs/SLAs (https://github.com/autopkg/autopkg/commit/4b77f6d5948a2f36258f4695f503513ec7671745)
+
+ADDITIONS:
+* The new URLGetter base Processor class has been merged in. It provides a new centralized way to handle fetching and downloading things from the web. In the future, more convenience functions will be added to allow any custom processor to easily fetch web resources without having to write their own urllib/web-handling code.
+* Thanks to @MichalMMac's heroic efforts, URLGetter is now much easier for other processors to use. There are now two ways a custom processor can download things without needing to write any urllib logic:
+  * `URLGetter.download_with_curl(curl_command, text=True)` takes a curl command as an argument (a list of strings that is passed to subprocess). You can use this along with the other helper functions to arrange your own curl command with custom headers and arguments, and parse the output.
+  * `URLGetter.download(url, headers=None, text=False)` takes a URL (and optional headers) and returns the output of the curl command. You can use this to simply retrieve the results of requesting a web page (such as for URLTextSearcher).
+* In both cases, you can pass text mode to determine if you get straight text output.
+* All custom processors that need to make a web request of any kind in autopkg/recipes have been switched to using URLGetter's methods. No more urllib in processors!
+
+### [1.3.1](https://github.com/autopkg/autopkg/compare/v1.3...v1.4) (November 06, 2019)
+
+FIXES:
+
+- Nested data structures in preferences, such as with JSS_REPOS, should no longer
+  cause AutoPkg to fail (https://github.com/autopkg/autopkg/commit/1aff762d8ea658b3fca8ac693f3bf13e8baf8778)
+
+### [1.3](https://github.com/autopkg/autopkg/compare/v1.2...v1.3) (November 04, 2019)
+
+FIXES:
+
+- `autopkg repo-list` wasn't respecting the `--prefs` option correctly (https://github.com/autopkg/autopkg/commit/ec7222335f7a0a191c8c7664ab81de477292f8b7)
+- `autopkg list-recipes` wasn't parsing the arguments correctly when used with `--prefs` (https://github.com/autopkg/autopkg/commit/8b15b7305cf9ef32310c6bc3728bf83fd06a4aee)
+- Reading in an integer value from macOS preferences and writing it out to disk was
+  using incorrect formatting due to a mismatch between plistlib, FoundationPlist, and
+  PyObjc data types, which caused MakeCatalogs.munki to fail. Now uses Python primitive
+  types instead (https://github.com/autopkg/autopkg/commit/8b15b7305cf9ef32310c6bc3728bf83fd06a4aee)
 
 ### [1.2](https://github.com/autopkg/autopkg/compare/v1.1...1.2) (September 16, 2019)
 

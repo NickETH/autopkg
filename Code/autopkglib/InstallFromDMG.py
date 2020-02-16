@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2014 Greg Neagle
 #
@@ -16,9 +16,9 @@
 """See docstring for InstallFromDMG class"""
 
 import os.path
+import plistlib
 import socket
 
-import FoundationPlist
 from autopkglib import ProcessorError
 from autopkglib.DmgMounter import DmgMounter
 
@@ -89,14 +89,14 @@ class InstallFromDMG(DmgMounter):
                 self.connect()
                 self.output("Sending installation request")
                 result = self.send_request(request)
-            except BaseException as err:
-                result = "ERROR: %s" % repr(err)
+            except Exception as err:
+                result = f"ERROR: {err}"
             finally:
                 self.output("Disconnecting")
                 self.disconnect()
 
             # Return result.
-            self.output("Result: %s" % result)
+            self.output(f"Result: {result}")
             self.env["install_result"] = result
             if result == "DONE":
                 self.env["install_from_dmg_summary_result"] = {
@@ -112,18 +112,14 @@ class InstallFromDMG(DmgMounter):
     def connect(self):
         """Connect to autopkginstalld"""
         try:
-            # pylint: disable=attribute-defined-outside-init
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            # pylint: enable=attribute-defined-outside-init
             self.socket.connect(AUTOPKGINSTALLD_SOCKET)
-        except socket.error as err:
-            raise ProcessorError(
-                "Couldn't connect to autopkginstalld: %s" % err.strerror
-            )
+        except OSError as err:
+            raise ProcessorError(f"Couldn't connect to autopkginstalld: {err.strerror}")
 
     def send_request(self, request):
         """Send an install request to autopkginstalld"""
-        self.socket.send(FoundationPlist.writePlistToString(request))
+        self.socket.send(plistlib.dumps(request))
         with os.fdopen(self.socket.fileno()) as fileref:
             while True:
                 data = fileref.readline()
@@ -140,13 +136,17 @@ class InstallFromDMG(DmgMounter):
         errors = data.rstrip().split("\n")
         if not errors:
             errors = [
-                "ERROR:No reply from autopkginstalld (crash?), " "check system logs"
+                "ERROR:No reply from autopkginstalld (crash?), check system logs"
             ]
         raise ProcessorError(", ".join([s.replace("ERROR:", "") for s in errors]))
 
     def disconnect(self):
         """Disconnect from autopkginstalld"""
-        self.socket.close()
+        try:
+            self.socket.close()
+        except OSError:
+            # the socket is already closed
+            pass
 
     def main(self):
         """Install something!"""

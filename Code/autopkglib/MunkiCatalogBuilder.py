@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2013 Greg Neagle
 #
@@ -30,7 +30,7 @@ class MunkiCatalogBuilder(Processor):
         "munki_repo_changed": {
             "required": False,
             "description": (
-                "If not defined or False, causes running " "makecatalogs to be skipped."
+                "If not defined or False, causes running makecatalogs to be skipped."
             ),
         },
     }
@@ -51,16 +51,16 @@ class MunkiCatalogBuilder(Processor):
         # Call makecatalogs.
         try:
             proc = subprocess.Popen(
-                args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
             (_, err_out) = proc.communicate()
         except OSError as err:
             raise ProcessorError(
-                "makecatalog execution failed with error code %d: %s"
-                % (err.errno, err.strerror)
+                f"makecatalog execution failed with error code {err.errno}: "
+                f"{err.strerror}"
             )
         if proc.returncode != 0:
-            raise ProcessorError("makecatalogs failed: %s" % err_out)
+            raise ProcessorError(f"makecatalogs failed: {err_out}")
         self.output("Munki catalogs rebuilt!")
 
 

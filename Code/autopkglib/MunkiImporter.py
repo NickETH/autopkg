@@ -17,10 +17,11 @@
 
 import os
 import plistlib
-import shutil
 import subprocess
 
 from autopkglib import Processor, ProcessorError
+from autopkglib.munkirepolibs.AutoPkgLib import AutoPkgLib
+from autopkglib.munkirepolibs.MunkiLib import MunkiLib
 
 __all__ = ["MunkiImporter"]
 
@@ -32,6 +33,29 @@ class MunkiImporter(Processor):
         "MUNKI_REPO": {
             "description": "Path to a mounted Munki repo.",
             "required": True,
+        },
+        "MUNKI_REPO_PLUGIN": {
+            "description": (
+                "Munki repo plugin. Defaults to FileRepo. Munki must be installed and available "
+                " at MUNKILIB_DIR if a plugin other than FileRepo is specified."
+            ),
+            "required": False,
+            "default": "FileRepo",
+        },
+        "MUNKILIB_DIR": {
+            "description": (
+                "Directory path that contains munkilib. Defaults to /usr/local/munki"
+            ),
+            "required": False,
+            "default": "/usr/local/munki",
+        },
+        "force_munki_repo_lib": {
+            "description": (
+                "When True, munki code libraries will be utilized when the FileRepo plugin is "
+                "used. Munki must be installed and available at MUNKILIB_DIR"
+            ),
+            "required": False,
+            "default": False,
         },
         "pkg_path": {
             "required": True,
@@ -56,6 +80,13 @@ class MunkiImporter(Processor):
         "pkginfo": {
             "required": False,
             "description": ("Dictionary of pkginfo keys to copy to generated pkginfo."),
+        },
+        "extract_icon": {
+            "required": False,
+            "description": (
+                "If not empty, attempt to extract and import an icon from the installer item. "
+                "Munki must be installed and available at MUNKILIB_DIR."
+            ),
         },
         "force_munkiimport": {
             "required": False,
@@ -122,138 +153,30 @@ class MunkiImporter(Processor):
     }
     description = __doc__
 
-    def make_catalog_db(self):
-        """Reads the 'all' catalog and returns a dict we can use like a
-         database"""
-
-        repo_path = self.env["MUNKI_REPO"]
-        all_items_path = os.path.join(repo_path, "catalogs", "all")
-        if not os.path.exists(all_items_path):
-            # might be an error, or might be a brand-new empty repo
-            catalogitems = []
+    def _fetch_repo_library(
+        self,
+        munki_repo,
+        munki_repo_plugin,
+        munkilib_dir,
+        repo_subdirectory,
+        force_munki_lib,
+    ):
+        if munki_repo_plugin == "FileRepo" and not force_munki_lib:
+            return AutoPkgLib(munki_repo, repo_subdirectory)
         else:
-            try:
-                with open(all_items_path, "rb") as f:
-                    catalogitems = plistlib.load(f)
-            except OSError as err:
-                raise ProcessorError(
-                    f"Error reading 'all' catalog from Munki repo: {err}"
-                )
+            return MunkiLib(
+                munki_repo, munki_repo_plugin, munkilib_dir, repo_subdirectory
+            )
 
-        pkgid_table = {}
-        app_table = {}
-        installer_item_table = {}
-        hash_table = {}
-        checksum_table = {}
-        files_table = {}
-
-        itemindex = -1
-        for item in catalogitems:
-            itemindex = itemindex + 1
-            name = item.get("name", "NO NAME")
-            vers = item.get("version", "NO VERSION")
-
-            if name == "NO NAME" or vers == "NO VERSION":
-                # skip this item
-                continue
-
-            # add to hash table
-            if "installer_item_hash" in item:
-                if not item["installer_item_hash"] in hash_table:
-                    hash_table[item["installer_item_hash"]] = []
-                hash_table[item["installer_item_hash"]].append(itemindex)
-
-            # add to installer item table
-            if "installer_item_location" in item:
-                installer_item_name = os.path.basename(item["installer_item_location"])
-                if installer_item_name not in installer_item_table:
-                    installer_item_table[installer_item_name] = {}
-                if vers not in installer_item_table[installer_item_name]:
-                    installer_item_table[installer_item_name][vers] = []
-                installer_item_table[installer_item_name][vers].append(itemindex)
-
-            # add to table of receipts
-            for receipt in item.get("receipts", []):
-                try:
-                    if "packageid" in receipt and "version" in receipt:
-                        pkgid = receipt["packageid"]
-                        pkgvers = receipt["version"]
-                        if pkgid not in pkgid_table:
-                            pkgid_table[pkgid] = {}
-                        if pkgvers not in pkgid_table[pkgid]:
-                            pkgid_table[pkgid][pkgvers] = []
-                        pkgid_table[pkgid][pkgvers].append(itemindex)
-                except TypeError:
-                    # skip this receipt
-                    continue
-
-            # add to table of installed applications
-            for install in item.get("installs", []):
-                try:
-                    if install.get("type") in ("application", "bundle"):
-                        if "path" in install:
-                            if "version_comparison_key" in install:
-                                app_version = install[install["version_comparison_key"]]
-                            else:
-                                app_version = install["CFBundleShortVersionString"]
-                            if install["path"] not in app_table:
-                                app_table[install["path"]] = {}
-                            if vers not in app_table[install["path"]]:
-                                app_table[install["path"]][app_version] = []
-                            app_table[install["path"]][app_version].append(itemindex)
-                    if install.get("type") == "file":
-                        if "path" in install:
-                            if "md5checksum" in install:
-                                cksum = install["md5checksum"]
-
-                                if cksum not in list(checksum_table.keys()):
-                                    checksum_table[cksum] = []
-
-                                checksum_table[cksum].append(
-                                    {"path": install["path"], "index": itemindex}
-                                )
-                            else:
-                                path = install["path"]
-
-                                if path not in list(files_table.keys()):
-                                    files_table[path] = []
-
-                                files_table[path].append(
-                                    {"path": install["path"], "index": itemindex}
-                                )
-
-                except (TypeError, KeyError):
-                    # skip this item
-                    continue
-
-        pkgdb = {}
-        pkgdb["hashes"] = hash_table
-        pkgdb["receipts"] = pkgid_table
-        pkgdb["applications"] = app_table
-        pkgdb["installer_items"] = installer_item_table
-        pkgdb["checksums"] = checksum_table
-        pkgdb["files"] = files_table
-        pkgdb["items"] = catalogitems
-
-        return pkgdb
-
-    def find_matching_item_in_repo(self, pkginfo):
+    def _find_matching_pkginfo(self, repo_library, pkginfo):
         """Looks through all catalog for items matching the one
         described by pkginfo. Returns a matching item if found."""
-
         if not pkginfo.get("installer_item_hash"):
             return None
 
-        if self.env.get("force_munkiimport"):
-            # we need to import even if there's a match, so skip
-            # the check
-            return None
-
-        pkgdb = self.make_catalog_db()
-
+        pkgdb = repo_library.make_catalog_db()
         # match hashes for the pkg or dmg
         if "installer_item_hash" in pkginfo:
-            pkgdb = self.make_catalog_db()
             matchingindexes = pkgdb["hashes"].get(pkginfo["installer_item_hash"])
             if matchingindexes:
                 # we have an item with the exact same checksum hash in the repo
@@ -360,104 +283,19 @@ class MunkiImporter(Processor):
         # if we get here, we found no matches
         return None
 
-    def copy_item_to_repo(self, pkginfo, uninstaller_pkg=False):
-        """Copies an item to the appropriate place in the repo.
-        If itempath is a path within the repo/pkgs directory, copies nothing.
-        Renames the item if an item already exists with that name.
-        Returns the relative path to the item.
-        uninstaller_pkg should be True if the item is an uninstaller (Adobe).
-        """
-
-        itempath = self.env["pkg_path"]
-        if uninstaller_pkg:
-            itempath = self.env["uninstaller_pkg_path"]
-        repo_path = self.env["MUNKI_REPO"]
-        subdirectory = self.env.get("repo_subdirectory", "")
-        item_version = pkginfo.get("version")
-
-        if not os.path.exists(repo_path):
-            raise ProcessorError(f"Munki repo not available at {repo_path}.")
-
-        destination_path = os.path.join(repo_path, "pkgs", subdirectory)
-        if not os.path.exists(destination_path):
-            try:
-                os.makedirs(destination_path)
-            except OSError as err:
-                raise ProcessorError(
-                    f"Could not create {destination_path}: {err.strerror}"
-                )
-
-        item_name = os.path.basename(itempath)
-        destination_pathname = os.path.join(destination_path, item_name)
-
-        if itempath == destination_pathname:
-            # we've been asked to 'import' an item already in the repo.
-            # just return the relative path
-            return os.path.join(subdirectory, item_name)
-
-        if item_version:
-            name, ext = os.path.splitext(item_name)
-            if not name.endswith(item_version):
-                # add the version number to the end of
-                # the item name
-                item_name = f"{name}-{item_version}{ext}"
-                destination_pathname = os.path.join(destination_path, item_name)
-
-        index = 0
-        name, ext = os.path.splitext(item_name)
-        while os.path.exists(destination_pathname):
-            # try appending numbers until we have a unique name
-            index += 1
-            item_name = f"{name}__{index}{ext}"
-            destination_pathname = os.path.join(destination_path, item_name)
-
-        try:
-            shutil.copy(itempath, destination_pathname)
-        except OSError as err:
-            raise ProcessorError(
-                f"Can't copy {self.env['pkg_path']} to {destination_pathname}: "
-                f"{err.strerror}"
-            )
-
-        return os.path.join(subdirectory, item_name)
-
-    def copy_pkginfo_to_repo(self, pkginfo):
-        """Saves pkginfo to munki_repo_path/pkgsinfo/subdirectory.
-        Returns full path to the pkginfo in the repo."""
-        # less error checking because we copy the installer_item
-        # first and bail if it fails...
-        repo_path = self.env["MUNKI_REPO"]
-        subdirectory = self.env.get("repo_subdirectory", "")
-        destination_path = os.path.join(repo_path, "pkgsinfo", subdirectory)
-        if not os.path.exists(destination_path):
-            try:
-                os.makedirs(destination_path)
-            except OSError as err:
-                raise ProcessorError(
-                    f"Could not create {destination_path}: {err.strerror}"
-                )
-
-        extension = self.env.get("MUNKI_PKGINFO_FILE_EXTENSION", "plist")
-        if len(extension) > 0:
-            extension = "." + extension.strip(".")
-        pkginfo_name = f"{pkginfo['name']}-{pkginfo['version'].strip()}{extension}"
-        pkginfo_path = os.path.join(destination_path, pkginfo_name)
-        index = 0
-        while os.path.exists(pkginfo_path):
-            index += 1
-            pkginfo_name = f"{pkginfo['name']}-{pkginfo['version']}__{index}{extension}"
-            pkginfo_path = os.path.join(destination_path, pkginfo_name)
-
-        try:
-            with open(pkginfo_path, "wb") as f:
-                plistlib.dump(pkginfo, f)
-        except OSError as err:
-            raise ProcessorError(
-                f"Could not write pkginfo {pkginfo_path}: {err.strerror}"
-            )
-        return pkginfo_path
-
     def main(self):
+        library = self._fetch_repo_library(
+            self.env["MUNKI_REPO"],
+            self.env["MUNKI_REPO_PLUGIN"],
+            self.env["MUNKILIB_DIR"],
+            self.env.get("repo_subdirectory"),
+            self.env["force_munki_repo_lib"],
+        )
+
+        self.output(f"Using repo lib: {library.__class__.__name__}")
+        self.output(f'        plugin: {self.env["MUNKI_REPO_PLUGIN"]}')
+        self.output(f'          repo: {self.env["MUNKI_REPO"]}')
+
         # clear any pre-exising summary result
         if "munki_importer_summary_result" in self.env:
             del self.env["munki_importer_summary_result"]
@@ -521,10 +359,13 @@ class MunkiImporter(Processor):
                 item["version_comparison_key"] = self.env["version_comparison_key"]
 
         # check to see if this item is already in the repo
-        matchingitem = self.find_matching_item_in_repo(pkginfo)
+        if self.env.get("force_munkiimport"):
+            matchingitem = None
+        else:
+            matchingitem = self._find_matching_pkginfo(library, pkginfo)
+
         if matchingitem:
             self.env["pkginfo_repo_path"] = ""
-            # set env["pkg_repo_path"] to the path of the matching item
             self.env["pkg_repo_path"] = os.path.join(
                 self.env["MUNKI_REPO"], "pkgs", matchingitem["installer_item_location"]
             )
@@ -538,29 +379,54 @@ class MunkiImporter(Processor):
             )
             return
 
-        # copy pkg/dmg to repo
-        relative_path = self.copy_item_to_repo(pkginfo)
-        # adjust the installer_item_location to match the actual location
-        # and name
-        pkginfo["installer_item_location"] = relative_path
+        # import pkg
+        install_path = library.copy_pkg_to_repo(pkginfo, self.env["pkg_path"])
+        pkginfo["installer_item_location"] = install_path.partition("pkgs/")[2]
+        self.env["pkg_repo_path"] = install_path
 
         if self.env.get("uninstaller_pkg_path"):
-            relative_uninstall_path = self.copy_item_to_repo(
-                pkginfo, uninstaller_pkg=True
+            uninstall_path = library.copy_pkg_to_repo(
+                pkginfo, self.env.get("uninstaller_pkg_path")
             )
-            pkginfo["uninstaller_item_location"] = relative_uninstall_path
+            pkginfo["uninstaller_item_location"] = uninstall_path.partition("pkgs/")[2]
             pkginfo["uninstallable"] = True
 
-        # set output variables
-        self.env["pkginfo_repo_path"] = self.copy_pkginfo_to_repo(pkginfo)
-        self.env["pkg_repo_path"] = os.path.join(
-            self.env["MUNKI_REPO"], "pkgs", relative_path
+        # import icon
+        icon_path = None
+        if self.env.get("extract_icon"):
+            # munki library is needed to extract and import icons
+            if isinstance(library, MunkiLib):
+                icon_library = library
+            else:
+                icon_library = MunkiLib(
+                    self.env["MUNKI_REPO"],
+                    self.env["MUNKI_REPO_PLUGIN"],
+                    self.env["MUNKILIB_DIR"],
+                    self.env.get("repo_subdirectory"),
+                )
+
+            icon_path = icon_library.find_matching_icon(pkginfo)
+
+            if not icon_path:
+                icon_path = icon_library.extract_and_copy_icon_to_repo(
+                    self.env["pkg_path"], pkginfo, import_multiple=False
+                )
+
+        self.env["icon_repo_path"] = icon_path or ""
+
+        # import pkginfo
+        pkginfo_path = library.copy_pkginfo_to_repo(
+            pkginfo, self.env.get("MUNKI_PKGINFO_FILE_EXTENSION", "plist")
         )
+
+        self.env["pkginfo_repo_path"] = pkginfo_path
+
         # update env["pkg_path"] to match env["pkg_repo_path"]
         # this allows subsequent recipe steps to reuse the uploaded
         # pkg/dmg instead of re-uploading
         # This won't affect most recipes, since most have a single
         # MunkiImporter step (and it's usually the last step)
+
         self.env["pkg_path"] = self.env["pkg_repo_path"]
         self.env["munki_info"] = pkginfo
         self.env["munki_repo_changed"] = True
@@ -572,6 +438,7 @@ class MunkiImporter(Processor):
                 "catalogs",
                 "pkginfo_path",
                 "pkg_repo_path",
+                "icon_repo_path",
             ],
             "data": {
                 "name": pkginfo["name"],
@@ -579,11 +446,14 @@ class MunkiImporter(Processor):
                 "catalogs": ",".join(pkginfo["catalogs"]),
                 "pkginfo_path": self.env["pkginfo_repo_path"].partition("pkgsinfo/")[2],
                 "pkg_repo_path": self.env["pkg_repo_path"].partition("pkgs/")[2],
+                "icon_repo_path": self.env["icon_repo_path"].partition("icons/")[2],
             },
         }
 
-        self.output(f"Copied pkginfo to {self.env['pkginfo_repo_path']}")
-        self.output(f"Copied pkg to {self.env['pkg_repo_path']}")
+        self.output(f'Copied pkginfo to: {self.env["pkginfo_repo_path"]}')
+        self.output(f'           pkg to: {self.env["pkg_repo_path"]}')
+        if self.env.get("extract_icon"):
+            self.output(f'          icon to: {self.env["icon_repo_path"]}')
 
 
 if __name__ == "__main__":

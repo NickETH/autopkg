@@ -20,7 +20,7 @@ These tasks typically involve at least several of the following steps:
 
 Often these tasks follow similar patterns for each individual application, and when managing many applications this becomes a daily task full of sub-tasks that one must remember (and/or maintain documentation for) about exactly what had to be done for a successful deployment of every update for every managed piece of software.
 
-With AutoPkg, we define these steps in a "Recipe" plist-based format, run automatically instead of by hand, and shared with others.
+With AutoPkg, we define these steps in a "Recipe" file in plist or yaml format, run automatically instead of by hand, and shared with others.
 
 
 Installation
@@ -34,7 +34,7 @@ AutoPkg is tested on the current macOS release. It may work on older releases, b
 
 Git can be installed via Apple's command-line developer tools package, which can be prompted for installation by simply typing 'git' in a Terminal window (OS X 10.9 or later).
 
-AutoPkg uses (and is currenly only tested with) Apple's provided Python. While it is definely possible to use AutoPkg with Python from other sources, it is currently not supported, and you are on your own.
+Since AutoPkg 2.0, Python 2 is no longer supported. The installer linked above contains a bundled version of Python 3 and all needed dependencies.
 
 
 Usage

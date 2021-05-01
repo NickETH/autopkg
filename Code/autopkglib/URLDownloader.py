@@ -19,12 +19,8 @@
 import os.path
 import tempfile
 
-from autopkglib import BUNDLE_ID, ProcessorError, is_mac
+from autopkglib import BUNDLE_ID, ProcessorError, xattr
 from autopkglib.URLGetter import URLGetter
-
-if is_mac():
-    import xattr
-
 
 __all__ = ["URLDownloader"]
 
@@ -115,6 +111,7 @@ class URLDownloader(URLGetter):
 
     def getxattr(self, attr):
         """Get a named xattr from a file. Return None if not present."""
+
         if attr in xattr.listxattr(self.env["pathname"]):
             return xattr.getxattr(self.env["pathname"], attr).decode()
         return None
@@ -170,13 +167,17 @@ class URLDownloader(URLGetter):
     def prefetch_filename(self):
         """Attempt to find filename in HTTP headers."""
         curl_cmd = self.prepare_base_curl_cmd()
-        curl_cmd.extend(["--head"])
+        curl_cmd.extend(["--head", "--request", "GET"])
 
         raw_headers = self.download_with_curl(curl_cmd)
         header = self.parse_headers(raw_headers)
 
         if "filename=" in header.get("content-disposition", ""):
-            filename = header["content-disposition"].rpartition("filename=")[2]
+            filename = (
+                header["content-disposition"]
+                .rpartition("filename=")[2]
+                .replace('"', "")
+            )
             self.output(
                 f"Filename prefetched from the HTTP Content-Disposition header: {filename}",
                 verbose_level=2,
@@ -307,9 +308,6 @@ class URLDownloader(URLGetter):
             self.output(f"Storing new ETag header: {header.get('etag')}")
 
     def main(self):
-        if not is_mac():
-            raise ProcessorError("This processor is Mac-only!")
-
         # Clear and initiazize data structures
         self.clear_vars()
 

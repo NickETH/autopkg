@@ -1,4 +1,118 @@
-### [2.0.3](https://github.com/autopkg/autopkg/compare/v2.0.2...HEAD) (Unreleased)
+### [2.3.2](https://github.com/autopkg/autopkg/compare/v2.3.1...HEAD) (Unreleased)
+
+### [2.3.1](https://github.com/autopkg/autopkg/compare/v2.3...v2.3.1) (March 03, 2021)
+
+FIXES:
+
+- Resolved a bug preventing `autopkg repo-update` and `autopkg repo-delete` operations on local file paths ([#724](https://github.com/autopkg/autopkg/issues/724); fixes [#723](https://github.com/autopkg/autopkg/issues/723) and [lindegroup/autopkgr#666](https://github.com/lindegroup/autopkgr/issues/666))
+
+### [2.3](https://github.com/autopkg/autopkg/compare/v2.2...v2.3) (March 01, 2021)
+
+NEW FEATURES:
+
+AutoPkg now supports recipes in [yaml](https://yaml.org/) format ([#698](https://github.com/autopkg/autopkg/pull/698), [example recipe](https://github.com/autopkg/autopkg/pull/698#issuecomment-783522503)). Yaml recipes tend to be more human-readable than plist recipes, especially for those who don't work with plists on a daily basis.
+
+AutoPkg can produce new recipes in yaml format using `autopkg new-recipe SomeCoolApp.pkg.recipe.yaml` and make overrides in yaml format using `autopkg make-override --format=yaml SomeCoolApp.pkg`. Searching for public yaml recipes on GitHub is also possible using `autopkg search`.
+
+NOTES FOR RECIPE AUTHORS:
+
+- Because yaml recipes will require AutoPkg 2.3 or later in order to run, and because some members of the AutoPkg community may still be using AutoPkg 1.x, recipe authors are encouraged to be conservative and keep existing public recipes in their current format for a while.
+- If you have both plist and yaml recipes for the same app in your repo, you may experience unexpected behavior now that AutoPkg detects and uses yaml recipes.
+
+OTHER CHANGES FROM 2.2:
+
+- Added support for internal GitHub URLs ([#649](https://github.com/autopkg/autopkg/pull/649))
+- `autopkg make-override` no longer creates override for deprecated recipes by default ([#685](https://github.com/autopkg/autopkg/pull/685))
+- Typo fixed in the recipe template created by `autopkg new-recipe`
+- Fixed a bug causing `autopkg repo-add` and `autopkg repo-delete` to fail for repos in GitHub organizations with non-alphanumeric characters in their names ([#712](https://github.com/autopkg/autopkg/issues/712), [#715](https://github.com/autopkg/autopkg/pull/715))
+- CodeSignatureVerifier warns when certain incorrect input variables are detected
+- MunkiImporter now uses consistent pkginfo matching logic ([#671](https://github.com/autopkg/autopkg/pull/671))
+- Minor edits to help text
+- Improvements to Versioner processor ([#600](https://github.com/autopkg/autopkg/pull/600))
+- Help is now shown for `autopkg list-processors --help`, matching behavior of most other verbs ([#717](https://github.com/autopkg/autopkg/pull/717))
+- The output of `autopkg list-recipes --plist` is now text instead of binary (this matches previous behavior in AutoPkg 1.x)
+- More output when using `autopkg repo-add` and `autopkg repo-delete` ([#704](https://github.com/autopkg/autopkg/pull/704))
+- Fixed a bug in MunkiImporter that caused incorrect `uninstaller_item_location` path ([#702](https://github.com/autopkg/autopkg/pull/702))
+- Building a foundation for long term expansion of platform support ([#648](https://github.com/autopkg/autopkg/pull/648), [#651](https://github.com/autopkg/autopkg/pull/651), [#653](https://github.com/autopkg/autopkg/pull/653), [#656](https://github.com/autopkg/autopkg/pull/656), [#658](https://github.com/autopkg/autopkg/pull/658), [#666](https://github.com/autopkg/autopkg/pull/666), [#670](https://github.com/autopkg/autopkg/pull/670))
+
+KNOWN ISSUES:
+
+- [#710](https://github.com/autopkg/autopkg/issues/710) is currently affecting some `autopkg search` results (regardless of whether the recipes are plist or yaml)
+
+### [2.2](https://github.com/autopkg/autopkg/compare/v2.1...v2.2) (August 24, 2020)
+
+NEW FEATURES
+MunkiImporter now supports Munki repo plugins, thanks to @tboyko. The default behavior
+is still to use FileRepo as the default local behavior, so existing behavior is
+unchanged. (https://github.com/autopkg/autopkg/pull/654)
+
+
+CHANGES FROM 2.1:
+- URLDownloader handles Content-Disposition filenames with quotes correctly (https://github.com/autopkg/autopkg/pull/633)
+- README and CONTRIBUTING guides updated with correct Python 3 framework info (https://github.com/autopkg/autopkg/pull/638)
+- PyYAML updated to 5.3.1 to address PyYAML-CVE-2020-1747 (https://github.com/autopkg/autopkg/pull/642)
+- Internal autopkg code structure is being shifted, with more code moving into separate
+  shared modules. Lots of various lint fixes, formatting, and safety handling improvements.
+- GitHub API queries no longer fail when searching for recipes with spaces in the name,
+  and are now quoted correctly (https://github.com/autopkg/autopkg/pull/664)
+- Processor subclasses now automatically configure an empty dictionary for `self.env` if
+  none is provided. This doesn't have any practical effect, but makes it easier to create
+  and use new Processor subclasses in the future.
+
+### [2.1](https://github.com/autopkg/autopkg/compare/v2.0.2...v2.1) (May 19, 2020)
+
+NEW FEATURES
+AutoPkg now supports the verbs `list-repos` and `processor-list` for convenience (https://github.com/autopkg/autopkg/pull/628)
+
+`autopkg info --pull`/`-p` now allows you to fetch all parent repos of a recipe
+automatically.
+
+Example:
+```
+$ autopkg repo-delete recipes
+$ autopkg info -p GoogleChrome.munki
+Didn't find a recipe for com.github.autopkg.munki.google-chrome.
+Found this recipe in repository: recipes
+Attempting git clone...
+
+Adding /Users/nmcspadden/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes to RECIPE_SEARCH_DIRS...
+Updated search path:
+  '.'
+  '~/Library/AutoPkg/Recipes'
+  '/Library/AutoPkg/Recipes'
+  '/Users/nmcspadden/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes'
+
+Description:         Downloads the latest Google Chrome disk image and imports into Munki.
+Identifier:          local.munki.GoogleChrome
+Munki import recipe: True
+Has check phase:     True
+Builds package:      False
+Recipe file path:    /Users/nmcspadden/Library/AutoPkg/RecipeOverrides/GoogleChrome.munki.recipe
+Parent recipe(s):    /Users/nmcspadden/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/GoogleChrome/GoogleChrome.munki.recipe
+                     /Users/nmcspadden/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes/GoogleChrome/GoogleChrome.download.recipe
+```
+
+The automatic fetching works by looking at the parent identifier of a recipe, and
+searching GitHub via API for that file. It fetches that parent file from GitHub
+directly, and adds the repo that it belongs to. Then it parses its parent, recursively
+until it finds a recipe with no parents.
+
+Note that the only verb to support this is `autopkg info`. You can use this feature to
+dynamically fetch parents on-demand, instead of preconfiguring your environment with a
+list of known repos.
+
+CHANGES FROM 2.0.2:
+- URLGetter can handle parsing headers without an explicit `url` in the environment (https://github.com/autopkg/autopkg/pull/605)
+- FileCreator now has a unit test (https://github.com/autopkg/autopkg/pull/591)
+- AutoPkg warns you more helpfully if you are trying to run it with Python 2 (https://github.com/autopkg/autopkg/pull/610)
+- If a recipe generates a Python stacktrace, the traceback output is only provided with verbosity > 2 (https://github.com/autopkg/autopkg/pull/609)
+- CodeSignatureVerifier warns you if you attempt to use the deprecated `expected_authorities` argument (https://github.com/autopkg/autopkg/commit/1a3481f1ff9a992ace27dc8d301e1ef3e86c691d)
+- Installing packages with AutoPkg .install recipes should no longer generate warnings about failing to close the socket (https://github.com/autopkg/autopkg/commit/09a5f5c2d6f5aaa9dd2963b722ced6f4915b60f1)
+- Updated AppDmgVersioner's description to clarify its limitations (https://github.com/autopkg/autopkg/commit/ababfd363171f47840c73409824bb34ee879241e)
+- Processors can now be run standalone again by accepting variables from a plist read from stdin (https://github.com/autopkg/autopkg/pull/621)
+- FileFinder handles recursive searching correctly (https://github.com/autopkg/autopkg/pull/622)
+- URLGetter has better error handling (https://github.com/autopkg/autopkg/pull/629)
+- Fetching a filename with URLGetter now works more reliably (https://github.com/autopkg/autopkg/commit/6d2b9410a05e73f52fce8c84834a54c3ae206f20)
 
 ### [2.0.2](https://github.com/autopkg/autopkg/compare/v2.0.1...v2.0.2) (February 05, 2020)
 

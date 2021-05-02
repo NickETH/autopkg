@@ -1,6 +1,6 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
-# Copyright 2014 Hannes Juutilainen
+# Copyright by Nick McSpadden, 2018
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # 20190328 Nick Heim: Checks divided into status and certificate. JSON had errors in reading bigger cert trees at full size.
+# 20201122 Nick Heim: Port to V2.2
+
 
 """See docstring for WindowsSignatureVerifier class"""
 
@@ -34,7 +36,7 @@ __all__ = ["WindowsSignatureVerifier"]
 
 
 class WindowsSignatureVerifier(DmgMounter):
-    """Verifies application bundle or installer package signature.
+    """Verifies application installer package signature.
 
     Requires version 0.3.1."""
 
@@ -79,7 +81,7 @@ class WindowsSignatureVerifier(DmgMounter):
         powershell = "C:\\windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
         # Get cert status information from the file
         cmd = [powershell, " & {(Get-AuthenticodeSignature " + input_path + ").Status}",]
-        sigstat = subprocess.check_output(cmd).rstrip()
+        sigstat = subprocess.check_output(cmd).decode().rstrip()
         # Get cert information from the file
         if (sigstat == 'Valid'):
             cmd = [powershell, " & {(Get-AuthenticodeSignature " + input_path + ").SignerCertificate|ConvertTo-Json}",]

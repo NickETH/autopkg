@@ -1,7 +1,7 @@
 AutoPkg for Windows!
 ====================
 
-Early, experimental Windows release is [here](https://github.com/NickETH/autopkg/releases).
+Fully working Windows release is [here](https://github.com/NickETH/autopkg/releases).
 
 This became possible thanks to the fundamental work of [Nick McSpadden](https://github.com/nmcspadden/autopkg/tree/win) !
 
@@ -40,7 +40,7 @@ Tested only on 64bit!
 
 **The following software and tools are needed as prequisites to run AutoPkg on Windows:**
 
-* Python 2.7.x: [Download](https://www.python.org/downloads/)
+* Python 3.9.x: [Download](https://www.python.org/downloads/)
   * Needed libraries: msl.loadlib, pythonnet, comtypes, pywin32
   * If Python is present, those libs are automatically installed by the AutoPkg installer.
 * Git (highly recomended): [Download](https://git-scm.com/download/win)

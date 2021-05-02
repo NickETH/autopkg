@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2014 Hannes Juutilainen
 #
@@ -16,9 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# 20190929 Nick Heim: Adaption for Windows. Very basic so far.
-# 20191105 Nick Heim: Port Windows adaption to V1.3.
-# 20200110 Nick Heim: Port Windows adaption to V1.4.1
+# 20210418 Nick Heim: Port Windows adaption to V2.3.1
 """See docstring for CodeSignatureVerifier class"""
 
 import os.path
@@ -112,12 +110,14 @@ class CodeSignatureVerifier(DmgMounter):
         test_requirement=None,
         strict_verification=None,
         deep_verification=True,
-        codesign_additional_arguments=[],
+        codesign_additional_arguments=None,
     ):
         """
         Runs 'codesign --verify --verbose <path>'. Returns True if
         codesign exited with 0 and False otherwise.
         """
+        if not codesign_additional_arguments:
+            codesign_additional_arguments = []
 
         process = ["/usr/bin/codesign", "--verify", "--verbose=1"]
 
@@ -154,20 +154,21 @@ class CodeSignatureVerifier(DmgMounter):
         # Add the requirement string
         if test_requirement:
             if self.env.get("CODE_SIGNATURE_VERIFICATION_DEBUG"):
-                self.output("Requirement: %s" % test_requirement)
+                self.output(f"Requirement: {test_requirement}")
             process.append("--test-requirement")
-            process.append("=%s" % test_requirement)
+            process.append(f"={test_requirement}")
 
         process.append(path)
 
         if self.env.get("CODE_SIGNATURE_VERIFICATION_DEBUG"):
-            self.output("%s" % " ".join(process))
+            self.output(f"{' '.join(process)}")
 
         proc = subprocess.Popen(
             process,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            text=True,
         )
         (output, error) = proc.communicate()
 
@@ -175,10 +176,10 @@ class CodeSignatureVerifier(DmgMounter):
         # to stderr but check the stdout too
         if error:
             for line in error.splitlines():
-                self.output("%s" % line)
+                self.output(line)
         if output:
             for line in output.splitlines():
-                self.output("%s" % line)
+                self.output(line)
 
         # Return True if codesign exited with 0
         return proc.returncode == 0
@@ -190,16 +191,18 @@ class CodeSignatureVerifier(DmgMounter):
         """
         process = ["/usr/sbin/pkgutil", "--check-signature", path]
 
-        proc = subprocess.Popen(process, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc = subprocess.Popen(
+            process, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
         (output, error) = proc.communicate()
 
         # Log everything
         if output:
             for line in output.splitlines():
-                self.output("%s" % line)
+                self.output(line)
         if error:
             for line in error.splitlines():
-                self.output("%s" % line)
+                self.output(line)
 
         # Parse the output for certificate authority names
         authority_name_chain = []
@@ -213,9 +216,18 @@ class CodeSignatureVerifier(DmgMounter):
     def process_code_signature(self, path):
         """Verifies the code signature for a path"""
         self.output("Verifying code signature...")
+
+        if self.env.get("requirements") and not self.env.get("requirement"):
+            self.output(
+                "WARNING: This recipe is using 'requirements' when it "
+                "should be using 'requirement'. This will become an error "
+                "in future versions of AutoPkg."
+            )
+            self.env["requirement"] = self.env["requirements"]
+
         # The first step is to run 'codesign --verify <path>'
-        requirement = self.env.get("requirement", None)
-        strict_verification = self.env.get("strict_verification", None)
+        requirement = self.env.get("requirement")
+        strict_verification = self.env.get("strict_verification")
         deep_verification = self.env.get("deep_verification", True)
         codesign_additional_arguments = self.env.get(
             "codesign_additional_arguments", []
@@ -235,7 +247,7 @@ class CodeSignatureVerifier(DmgMounter):
                 "DISABLE_CODE_SIGNATURE_VERIFICATION to a non-empty value."
             )
 
-        if self.env.get("expected_authority_names", None):
+        if self.env.get("expected_authority_names"):
             self.output(
                 "ERROR: Using 'expected_authority_names' to verify code "
                 "signature is no longer supported. Recipes should use the "
@@ -267,12 +279,21 @@ class CodeSignatureVerifier(DmgMounter):
                 "DISABLE_CODE_SIGNATURE_VERIFICATION to a non-empty value."
             )
 
-        if self.env.get("expected_authority_names", None):
+        if self.env.get("expected_authorities") and not self.env.get(
+            "expected_authority_names"
+        ):
+            self.output(
+                "WARNING: This recipe is using 'expected_authorities' when it "
+                "should be using 'expected_authority_names'. This will become an error "
+                "in future versions of AutoPkg."
+            )
+            self.env["expected_authority_names"] = self.env["expected_authorities"]
+        if self.env.get("expected_authority_names"):
             expected_authority_names = self.env["expected_authority_names"]
             if authority_names != expected_authority_names:
                 self.output("Mismatch in authority names")
-                self.output("Expected: %s" % " -> ".join(expected_authority_names))
-                self.output("Found:    %s" % " -> ".join(authority_names))
+                self.output(f"Expected: {' -> '.join(expected_authority_names)}")
+                self.output(f"Found:    {' -> '.join(authority_names)}")
                 raise ProcessorError(
                     "Mismatch in authority names. Note that all "
                     "verification can be disabled by setting the variable "
@@ -286,7 +307,7 @@ class CodeSignatureVerifier(DmgMounter):
             self.output("Not on macOS, not running Code Signature Verification")
             return
         if self.env.get("DISABLE_CODE_SIGNATURE_VERIFICATION"):
-            self.output("Code signature verification disabled for this recipe " "run.")
+            self.output("Code signature verification disabled for this recipe run.")
             return
         # Check if we're trying to read something inside a dmg.
         input_path = self.env["input_path"]
@@ -300,20 +321,20 @@ class CodeSignatureVerifier(DmgMounter):
             matches = glob(input_path)
             if len(matches) == 0:
                 raise ProcessorError(
-                    "Error processing path '%s' with glob. " % input_path
+                    f"Error processing path '{input_path}' with glob. "
                 )
             matched_input_path = matches[0]
             if len(matches) > 1:
                 self.output(
-                    "WARNING: Multiple paths match 'input_path' glob '%s':" % input_path
+                    f"WARNING: Multiple paths match 'input_path' glob '{input_path}':"
                 )
                 for match in matches:
-                    self.output("  - %s" % match)
+                    self.output(f"  - {match}")
 
             if [c for c in "*?[]!" if c in input_path]:
                 self.output(
-                    "Using path '%s' matched from globbed '%s'."
-                    % (matched_input_path, input_path)
+                    f"Using path '{matched_input_path}' matched from "
+                    f"globbed '{input_path}'."
                 )
 
             # Get current Darwin kernel version

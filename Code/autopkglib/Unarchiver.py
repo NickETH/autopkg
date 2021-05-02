@@ -1,10 +1,7 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2010 Per Olofsson
 #
-# Inital Windows support by Nick McSpadden, 2018
-# 
-
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -16,18 +13,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
-# 20190929 Nick Heim: Adaption for Windows. Does it really work? Use 7zip?
-# 20191105 Nick Heim: Port Windows adaption to V1.3.
-# 20200110 Nick Heim: Port Windows adaption to V1.4.1
-
 """See docstring for Unarchiver class"""
 
 import os
 import shutil
 import subprocess
+import tarfile
+import zipfile
+from typing import Dict, Type, Union
 
-from autopkglib import Processor, ProcessorError, is_mac, is_windows
+from autopkglib import Processor, ProcessorError, is_mac
 
 __all__ = ["Unarchiver"]
 
@@ -38,6 +33,24 @@ EXTNS = {
     "tar": ["tar"],
     "gzip": ["gzip"],
 }
+
+
+ExtractorType = Union[Type[tarfile.TarFile], Type[zipfile.ZipFile]]
+Extractor = Union[tarfile.TarFile, zipfile.ZipFile]
+
+NATIVE_EXTRACTORS: Dict[str, ExtractorType] = {
+    "tar_bzip2": tarfile.TarFile,
+    "tar_gzip": tarfile.TarFile,
+    "tar": tarfile.TarFile,
+    "zip": zipfile.ZipFile,
+    # gzip not supported for now -- 2020-07-22
+}
+
+
+def _default_use_python_native_extractor() -> bool:
+    if is_mac():
+        return False
+    return True
 
 
 class Unarchiver(Processor):
@@ -71,18 +84,86 @@ class Unarchiver(Processor):
                 "file extension is used to guess the format."
             ),
         },
+        "USE_PYTHON_NATIVE_EXTRACTOR": {
+            "required": False,
+            "description": (
+                "Controls whether or not Unarchiver extracts the archive with native "
+                "Python code, or calls out to a platform specific utility. "
+                "The default is determined on a platform specific basis. "
+                "Currently, this means that on macOS platform utilities are used, "
+                "and otherwise Python is used."
+            ),
+            "default": _default_use_python_native_extractor(),
+        },
     }
+
     output_variables = {}
 
     def get_archive_format(self, archive_path):
         """Guess archive format based on filename extension"""
-        # pylint: disable=no-self-use
-        for format_str, extns in EXTNS.items():
+        for format_str, extns in list(EXTNS.items()):
             for extn in extns:
                 if archive_path.endswith(extn):
                     return format_str
         # We found no known archive file extension if we got this far
         return None
+
+    def _extract(self, format: str, archive_path: str, destination_path: str) -> None:
+        if self.env["USE_PYTHON_NATIVE_EXTRACTOR"]:
+            self._extract_native(format, archive_path, destination_path)
+        else:
+            self._extract_utility(format, archive_path, destination_path)
+
+    def _extract_native(
+        self, format: str, archive_path: str, destination_path: str
+    ) -> None:
+        archivefile_class: ExtractorType = NATIVE_EXTRACTORS[format]
+        archive: Extractor = archivefile_class(archive_path, mode="r")
+        try:
+            archive.extractall(path=destination_path)
+        except Exception as ex:
+            raise ProcessorError(
+                f"Unarchiving {archive_path} with <native extractor> failed: {ex}"
+            )
+
+    def _extract_utility(
+        self, format: str, archive_path: str, destination_path: str
+    ) -> None:
+        """Extracts an archive using a platform specific utility."""
+        if format == "zip":
+            cmd = [
+                "/usr/bin/ditto",
+                "--noqtn",
+                "-x",
+                "-k",
+                archive_path,
+                destination_path,
+            ]
+        elif format == "gzip":
+            cmd = ["/usr/bin/ditto", "--noqtn", "-x", archive_path, destination_path]
+        elif format.startswith("tar"):
+            cmd = ["/usr/bin/tar", "-x", "-f", archive_path, "-C", destination_path]
+            if format.endswith("gzip"):
+                cmd.append("-z")
+            elif format.endswith("bzip2"):
+                cmd.append("-j")
+
+        # Call command.
+        try:
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            )
+            (_, stderr) = proc.communicate()
+        except OSError as err:
+            raise ProcessorError(
+                f"{os.path.basename(cmd[0])} execution failed with error code "
+                f"{err.errno}: {err.strerror}"
+            )
+        if proc.returncode != 0:
+            raise ProcessorError(
+                f"Unarchiving {archive_path} with {os.path.basename(cmd[0])} failed: "
+                f"{stderr}"
+            )
 
     def main(self):
         """Unarchive a file"""
@@ -102,9 +183,7 @@ class Unarchiver(Processor):
             try:
                 os.makedirs(destination_path)
             except OSError as err:
-                raise ProcessorError(
-                    "Can't create %s: %s" % (destination_path, err.strerror)
-                )
+                raise ProcessorError(f"Can't create {destination_path}: {err.strerror}")
         elif self.env.get("purge_destination"):
             for entry in os.listdir(destination_path):
                 path = os.path.join(destination_path, entry)
@@ -114,69 +193,29 @@ class Unarchiver(Processor):
                     else:
                         os.unlink(path)
                 except OSError as err:
-                    raise ProcessorError("Can't remove %s: %s" % (path, err.strerror))
+                    raise ProcessorError(f"Can't remove {path}: {err.strerror}")
 
         fmt = self.env.get("archive_format")
         if fmt is None:
             fmt = self.get_archive_format(archive_path)
             if not fmt:
                 raise ProcessorError(
-                    "Can't guess archive format for filename %s"
-                    % os.path.basename(archive_path)
+                    "Can't guess archive format for filename "
+                    f"{os.path.basename(archive_path)}"
                 )
             self.output(
-                "Guessed archive format '%s' from filename %s"
-                % (fmt, os.path.basename(archive_path))
+                f"Guessed archive format '{fmt}' from filename "
+                f"{os.path.basename(archive_path)}"
             )
-        elif fmt not in EXTNS.keys():
+        elif fmt not in list(EXTNS.keys()):
+            msg = ", ".join(list(EXTNS.keys()))
             raise ProcessorError(
-                "'%s' is not valid for the 'archive_format' variable. "
-                "Must be one of %s." % (fmt, ", ".join(EXTNS.keys()))
+                f"'{fmt}' is not valid for the 'archive_format' variable. "
+                f"Must be one of {msg}."
             )
 
-        if fmt == "zip":
-            cmd = [
-                "/usr/bin/ditto",
-                "--noqtn",
-                "-x",
-                "-k",
-                archive_path,
-                destination_path,
-            ]
-        elif fmt == "gzip":
-            cmd = ["/usr/bin/ditto", "--noqtn", "-x", archive_path, destination_path]
-        elif fmt.startswith("tar"):
-            cmd = ["/usr/bin/tar", "-x", "-f", archive_path, "-C", destination_path]
-            if fmt.endswith("gzip"):
-                cmd.append("-z")
-            elif fmt.endswith("bzip2"):
-                cmd.append("-j")
-
-        if is_windows():
-            cmd = [
-                "powershell.exe",
-                "$progressPreference = 'silentlyContinue';"
-                "Expand-Archive",
-                "-Path", archive_path,
-                "-DestinationPath", destination_path,
-                "-Force",
-            ]
-        # Call command.
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (_, stderr) = proc.communicate()
-        except OSError as err:
-            raise ProcessorError(
-                "%s execution failed with error code %d: %s"
-                % (os.path.basename(cmd[0]), err.errno, err.strerror)
-            )
-        if proc.returncode != 0:
-            raise ProcessorError(
-                "Unarchiving %s with %s failed: %s"
-                % (archive_path, os.path.basename(cmd[0]), stderr)
-            )
-
-        self.output("Unarchived %s to %s" % (archive_path, destination_path))
+        self._extract(fmt, archive_path, destination_path)
+        self.output(f"Unarchived {archive_path} to {destination_path}")
 
 
 if __name__ == "__main__":

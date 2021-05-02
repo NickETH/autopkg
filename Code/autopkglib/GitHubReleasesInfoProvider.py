@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/local/autopkg/python
 #
 # Copyright 2014-2015 Timothy Sutton
 #
@@ -15,20 +15,15 @@
 # limitations under the License.
 """See docstring for GitHubReleasesInfoProvider class"""
 
-# Disabling warnings for env members and imports that only affect recipe-
-# specific processors.
-# pylint: disable=e1101,f0401
-
 import re
 
 import autopkglib.github
-from autopkglib import Processor, ProcessorError
+from autopkglib import APLooseVersion, Processor, ProcessorError
 
 __all__ = ["GitHubReleasesInfoProvider"]
 
 
 class GitHubReleasesInfoProvider(Processor):
-    # pylint: disable=missing-docstring
     description = (
         "Get metadata from the latest release from a GitHub project"
         " using the GitHub Releases API."
@@ -38,19 +33,17 @@ class GitHubReleasesInfoProvider(Processor):
         "asset_regex": {
             "required": False,
             "description": (
-                "If set, return only a release asset that " "matches this regex."
+                "If set, return only a release asset that matches this regex."
             ),
         },
         "github_repo": {
             "required": True,
-            "description": (
-                "Name of a GitHub user and repo, ie. " "'MagerValp/AutoDMG'"
-            ),
+            "description": ("Name of a GitHub user and repo, ie. 'MagerValp/AutoDMG'"),
         },
         "include_prereleases": {
             "required": False,
             "description": (
-                "If set to True or a non-empty value, include " "prereleases."
+                "If set to True or a non-empty value, include prereleases."
             ),
         },
         "sort_by_highest_tag_names": {
@@ -75,19 +68,39 @@ class GitHubReleasesInfoProvider(Processor):
             "default": "/usr/bin/curl",
             "description": "Path to curl binary. Defaults to /usr/bin/curl.",
         },
+        "GITHUB_URL": {
+            "required": False,
+            "default": "https://api.github.com",
+            "description": (
+                "If your organization has an internal GitHub instance "
+                "set this value to your internal GitHub URL "
+                "ie. 'https://git.internal.corp.com/api/v3'"
+            ),
+        },
+        "GITHUB_TOKEN_PATH": {
+            "required": False,
+            "default": "~/.autopkg_gh_token",
+            "description": (
+                "Path to a file containing your GitHub token. "
+                "Can be a relative path or absolute path. "
+                "ie. '~/.custom_gh_token' or '/path/to/token' "
+                "NOTE: the AutoPkg preference 'GITHUB_TOKEN' "
+                "takes precedence over this value."
+            ),
+        },
     }
     output_variables = {
         "release_notes": {
-            "description": ("Full release notes body text from the chosen " "release.")
+            "description": ("Full release notes body text from the chosen release.")
         },
         "url": {
             "description": (
-                "URL for the first asset found for the project's " "latest release."
+                "URL for the first asset found for the project's latest release."
             )
         },
         "version": {
             "description": (
-                "Version info parsed, naively derived from the " "release's tag."
+                "Version info parsed, naively derived from the release's tag."
             )
         },
     }
@@ -97,17 +110,21 @@ class GitHubReleasesInfoProvider(Processor):
     def get_releases(self, repo):
         """Return a list of releases dicts for a given GitHub repo. repo must
         be of the form 'user/repo'"""
-        # pylint: disable=no-self-use
         releases = None
         curl_opts = self.env.get("curl_opts")
-        github = autopkglib.github.GitHubSession(self.env["CURL_PATH"], curl_opts)
-        releases_uri = "/repos/%s/releases" % repo
+        github = autopkglib.github.GitHubSession(
+            self.env["CURL_PATH"],
+            curl_opts,
+            self.env["GITHUB_URL"],
+            self.env["GITHUB_TOKEN_PATH"],
+        )
+        releases_uri = f"/repos/{repo}/releases"
         (releases, status) = github.call_api(releases_uri)
         if status != 200:
-            raise ProcessorError("Unexpected GitHub API status code %s." % status)
+            raise ProcessorError(f"Unexpected GitHub API status code {status}.")
 
         if not releases:
-            raise ProcessorError("No releases found for repo '%s'" % repo)
+            raise ProcessorError(f"No releases found for repo '{repo}'")
 
         return releases
 
@@ -135,25 +152,27 @@ class GitHubReleasesInfoProvider(Processor):
                     selected = (rel, asset)
                     break
                 else:
-                    if re.match(regex, asset["name"]):
-                        self.output(
-                            "Matched regex '%s' among asset(s): %s"
-                            % (regex, ", ".join([x["name"] for x in assets]))
-                        )
-                        selected = (rel, asset)
-                        break
+                    try:
+                        if re.match(regex, asset["name"]):
+                            self.output(
+                                f"Matched regex '{regex}' among asset(s): "
+                                f"{', '.join([x['name'] for x in assets])}"
+                            )
+                            selected = (rel, asset)
+                            break
+                    except re.error as e:
+                        raise ProcessorError(f"Invalid regex: {e}")
         if not selected:
             raise ProcessorError(
                 "No release assets were found that satisfy the criteria."
             )
 
-        # pylint: disable=w0201
         # We set these in the class to avoid passing more objects around
         self.selected_release = selected[0]
         self.selected_asset = selected[1]
         self.output(
-            "Selected asset '%s' from release '%s'"
-            % (self.selected_asset["name"], self.selected_release["name"])
+            f"Selected asset '{self.selected_asset['name']}' from release "
+            f"'{self.selected_release['name']}'"
         )
 
     def process_release_asset(self):
@@ -171,21 +190,8 @@ class GitHubReleasesInfoProvider(Processor):
         # Get our list of releases
         releases = self.get_releases(self.env["github_repo"])
         if self.env.get("sort_by_highest_tag_names"):
-            from operator import itemgetter
-
-            def loose_compare(this, that):
-                # cmp() doesn't exist in Python3, so this uses the suggested
-                # solutions from What's New In Python 3.0:
-                # https://docs.python.org/3.0/whatsnew/3.0.html#ordering-comparisons
-                # This will be refactored in Python 3.
-                from distutils.version import LooseVersion
-
-                this_comparison = LooseVersion(this) > LooseVersion(that)
-                that_comparison = LooseVersion(this) < LooseVersion(that)
-                return this_comparison - that_comparison
-
             releases = sorted(
-                releases, key=itemgetter("tag_name"), cmp=loose_compare, reverse=True
+                releases, key=lambda a: APLooseVersion(a["tag_name"]), reverse=True
             )
 
         # Store the first eligible asset

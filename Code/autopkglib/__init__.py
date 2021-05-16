@@ -220,7 +220,9 @@ class Preferences:
         * `/home/username/.config/Autopkg/config.{plist,json}`
         Tries to find `config.plist`, then `config.json`."""
 
-        config_dir = appdirs.user_config_dir(APP_NAME, appauthor=False)
+        # config_dir = appdirs.user_config_dir(APP_NAME, appauthor=False)
+        # Windows configuration files should go to the Appdata\Roaming dir.
+        config_dir = appdirs.user_config_dir(APP_NAME, appauthor=False, roaming=True)
 
         # Try a plist config, then a json config.
         data = self._parse_json_or_plist_file(os.path.join(config_dir, "config.plist"))

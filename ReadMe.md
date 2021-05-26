@@ -32,6 +32,7 @@ But first, install all the prequisites!
 Recommended installation is per user into the user profile, which is used to run AutoPkg. For this to work, the MSI must be advertised with admin rights and the following command:
 
 msiexec /jm AutoPkgWin.msi
+CAUTION: This needs an elevated CMD-shell! PS-console does not work!
 
 After this, the Installer can be run with standard user rights.
 
@@ -40,7 +41,7 @@ Tested only on 64bit!
 
 **The following software and tools are needed as prequisites to run AutoPkg on Windows:**
 
-* Python 2.7.x: [Download](https://www.python.org/downloads/)
+* Python 2.7.x: [Download](https://www.python.org/downloads/release/python-2718/)
   * Needed libraries: msl.loadlib, pythonnet, comtypes, pywin32
   * If Python is present, those libs are automatically installed by the AutoPkg installer.
 * Git (highly recomended): [Download](https://git-scm.com/download/win)

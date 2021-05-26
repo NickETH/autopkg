@@ -32,6 +32,7 @@ But first, install all the prequisites!
 Recommended installation is per user into the user profile, which is used to run AutoPkg. For this to work, the MSI must be advertised with admin rights and the following command:
 
 msiexec /jm AutoPkgWin.msi
+
 CAUTION: This needs an elevated CMD-shell! PS-console does not work!
 
 After this, the Installer can be run with standard user rights.

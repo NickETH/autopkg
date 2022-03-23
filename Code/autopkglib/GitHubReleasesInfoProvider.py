@@ -98,6 +98,14 @@ class GitHubReleasesInfoProvider(Processor):
                 "URL for the first asset found for the project's latest release."
             )
         },
+        "asset_url": {
+            "description": (
+                "The asset URL for the project's latest release. This is an "
+                "API-only URL distinct from the browser_download_url, and is "
+                "required for programmatically downloading assets from private "
+                "repositories."
+            )
+        },
         "version": {
             "description": (
                 "Version info parsed, naively derived from the release's tag."
@@ -175,17 +183,6 @@ class GitHubReleasesInfoProvider(Processor):
             f"'{self.selected_release['name']}'"
         )
 
-    def process_release_asset(self):
-        """Extract what we need from the release and chosen asset, set env
-        variables"""
-        tag = self.selected_release["tag_name"]
-        # Versioned tags usually start with 'v'
-        if tag.startswith("v"):
-            tag = tag[1:]
-
-        self.env["url"] = self.selected_asset["browser_download_url"]
-        self.env["version"] = tag
-
     def main(self):
         # Get our list of releases
         releases = self.get_releases(self.env["github_repo"])
@@ -200,11 +197,14 @@ class GitHubReleasesInfoProvider(Processor):
         # Record the url
         self.env["url"] = self.selected_asset["browser_download_url"]
 
+        # Record the asset url
+        self.env["asset_url"] = self.selected_asset["url"]
+
         # Get a version string from the tag name
         tag = self.selected_release["tag_name"]
         # Versioned tags usually start with 'v'
         if tag.startswith("v"):
-            tag = tag[1:]
+            tag = tag.lstrip("v.")
         self.env["version"] = tag
 
         # Record release notes

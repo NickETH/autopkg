@@ -46,12 +46,18 @@ except ImportError:
 # pylint: enable=import-error
 
 
+# Processors that exist in the codebase but are not yet fully supported.
+EXPERIMENTAL_PROCS = (
+    "ChocolateyPackager",
+    "SignToolVerifier",
+)
+
+
 def writefile(stringdata, path):
     """Writes string data to path."""
     try:
-        fileobject = open(path, mode="w", buffering=1)
-        print(stringdata.encode("UTF-8"), file=fileobject)
-        fileobject.close()
+        with open(path, mode="w", buffering=1) as fileobject:
+            print(stringdata, file=fileobject)
     except OSError:
         print(f"Couldn't write to {path}", file=fileobject)
 
@@ -102,6 +108,8 @@ def generate_sidebar(sidebar_path):
     toc_string = ""
     toc_string += processor_heading + "\n"
     for processor_name in sorted(processor_names(), key=lambda s: s.lower()):
+        if processor_name in EXPERIMENTAL_PROCS:
+            continue
         page_name = f"Processor-{processor_name}"
         page_name.replace(" ", "-")
         toc_string += f"      * [[{processor_name}|{page_name}]]\n"
@@ -168,7 +176,7 @@ def main(_):
     # Grab the version for the commit log.
     version = arguments[0]
 
-    print("Cloning AutoPkg wiki..")
+    print("Cloning AutoPkg wiki...")
     print()
 
     if options.directory:
@@ -176,12 +184,15 @@ def main(_):
     else:
         output_dir = clone_wiki_dir()
 
-    print(f"Cloned to {output_dir}.")
+    print(f"Cloned to {output_dir}")
     print()
     print()
 
     # Generate markdown pages for each processor attributes
-    for processor_name in processor_names():
+    for processor_name in sorted(processor_names(), key=lambda s: s.lower()):
+        if processor_name in EXPERIMENTAL_PROCS:
+            print(f"Skipping experimental processor {processor_name}")
+            continue
         if options.processor:
             if options.processor != processor_name:
                 continue
@@ -248,7 +259,7 @@ def main(_):
         "Shown above is the commit log for the changes to the wiki markdown. \n"
         "Type 'push' to accept and push the changes to GitHub. The wiki repo \n"
         "local clone can be also inspected at:\n"
-        f"{output_dir}."
+        f"{output_dir}"
     )
 
     push_commit = input()

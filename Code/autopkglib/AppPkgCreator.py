@@ -98,7 +98,7 @@ class AppPkgCreator(DmgMounter, PkgCreator):
         """Build a packaging request, send it to the autopkgserver and get the
         constructed package."""
 
-        # clear any pre-exising summary result
+        # clear any pre-existing summary result
         if "app_pkg_creator_summary_result" in self.env:
             del self.env["app_pkg_creator_summary_result"]
 
@@ -206,6 +206,9 @@ class AppPkgCreator(DmgMounter, PkgCreator):
         finally:
             self.output("Disconnecting")
             self.disconnect()
+
+        # Tidy up, deleting the payload dir we created earlier.
+        shutil.rmtree(pkgroot)
 
         # Return path to pkg.
         self.env["pkg_path"] = pkg_path

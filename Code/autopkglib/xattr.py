@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# 2021052 Nick Heim: Adaption for Windows. Transfer the pyads stuff to this module
+# 20210529 Nick Heim: Adaption for Windows. Transfer the pyads stuff to this module
+# 20220110 Nick Heim: Correction on listxattr. return None trows an error on files with no etag
 
 
 """
@@ -36,9 +37,10 @@ if is_windows():
 
     def listxattr(path: str, symlink: bool = False) -> List[str]:
         handler = pyads.ADS(path)
-        if handler.has_streams():
-            return handler.init_streams()
-        return None
+        #if handler.has_streams():
+        #   return handler.init_streams()
+        #return None
+        return handler.init_streams()
 
     def removexattr(path: str, attr: str, symlink: bool = False) -> None:
         handler = pyads.ADS(path)

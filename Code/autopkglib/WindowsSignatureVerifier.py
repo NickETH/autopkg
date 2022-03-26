@@ -85,8 +85,10 @@ class WindowsSignatureVerifier(DmgMounter):
         # Get cert information from the file
         if (sigstat == 'Valid'):
             cmd = [powershell, " & {(Get-AuthenticodeSignature " + input_path + ").SignerCertificate|ConvertTo-Json}",]
-            out = subprocess.check_output(cmd)
+            # out = subprocess.check_output(cmd)
+            out = subprocess.getoutput(cmd)
             # print >> sys.stdout, "Powershell out %s" % out
+            self.output("%s" % out)
             data = json.loads(out)
             if (data['Subject'] != self.env['expected_subject']):
                 raise ProcessorError(

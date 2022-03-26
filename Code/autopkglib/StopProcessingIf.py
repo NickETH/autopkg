@@ -17,7 +17,7 @@
 # limitations under the License.
 #
 # 20190328 Nick Heim: Adaption for Windows. Very basic so far. Looking for a better predicate class...
-# 20210417 Nick Heim: Port Windows adaption to V2.3.1
+# 20220326 Nick Heim: Port Windows adaption to V2.4.1
 
 """See docstring for StopProcessingIf class"""
 

@@ -37,9 +37,6 @@ if is_windows():
 
     def listxattr(path: str, symlink: bool = False) -> List[str]:
         handler = pyads.ADS(path)
-        #if handler.has_streams():
-        #   return handler.init_streams()
-        #return None
         return handler.init_streams()
 
     def removexattr(path: str, attr: str, symlink: bool = False) -> None:
@@ -123,5 +120,7 @@ else:
     def removexattr(path: str, attr: str, symlink: bool = False) -> None:
         return _xattr.removexattr(path, attr, symlink)
 
-    def setxattr(path: str, attr: str, value: str, options: int = 0, symlink: bool = False) -> None:
+    def setxattr(
+        path: str, attr: str, value: str, options: int = 0, symlink: bool = False
+    ) -> None:
         return _xattr.setxattr(path, attr, value, options, symlink)

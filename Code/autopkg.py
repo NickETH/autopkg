@@ -60,15 +60,15 @@ from autopkglib import (
 	is_windows,
 )
 from autopkglib.github import GitHubSession, print_gh_search_results
-# Warning disabled on Windows version
-#f sys.platform != "darwin":
-#    print(
-#        """
-#--------------------------------------------------------------------------------
-#-- WARNING: AutoPkg is not completely functional on platforms other than OS X --
-#--------------------------------------------------------------------------------
-#"""
-#    )
+
+# if sys.platform != "darwin":
+    # print(
+        # """
+# --------------------------------------------------------------------------------
+# -- WARNING: AutoPkg is not completely functional on platforms other than OS X --
+# --------------------------------------------------------------------------------
+# """
+    # )
 
 # Catch Python 2 wrappers with an early f-string. Message must be on a single line.
 _ = f"""{sys.version_info.major} It looks like you're running the autopkg tool with an incompatible version of Python. Please update your script to use autopkg's included Python (/usr/local/autopkg/python). AutoPkgr users please note that AutoPkgr 1.5.1 and earlier is NOT compatible with autopkg 2. """  # noqa
@@ -542,6 +542,9 @@ def get_recipe_repo(git_path):
     # figure out a local directory name to clone to
     parts = urlparse(git_path)
     domain_and_port = parts.netloc
+    # discard user name if any
+    if "@" in domain_and_port:
+        domain_and_port = domain_and_port.split("@", 1)[1]
     # discard port if any
     domain = domain_and_port.split(":")[0]
     reverse_domain = ".".join(reversed(domain.split(".")))
@@ -694,6 +697,7 @@ def expand_repo_url(url):
     'user/reciperepo'         -> 'https://github.com/user/reciperepo'
     'reciperepo'              -> 'https://github.com/autopkg/reciperepo'
     'http://some/repo/url     -> 'http://some/repo/url'
+    'git@server:repo/url      -> 'ssh://git@server/repo/url'
     '/some/path               -> '/some/path'
     '~/some/path              -> '~/some/path'
     """
@@ -705,8 +709,16 @@ def expand_repo_url(url):
         # If the URL looks like a file path, return as is.
         pass
     elif not parsed_url.scheme:
+        if ":" in parsed_url.path and (
+            "/" not in parsed_url.path
+            or parsed_url.path.find(":") < parsed_url.path.find("/")
+        ):
+            # If no URL scheme was given check for scp-like syntax, where there is
+            # no slash before the first colon and convert this to a valid ssh url
+            url = url.replace(":", "/", 1)
+            url = f"ssh://{url}"
         # If no URL scheme was given in the URL, try GitHub URLs
-        if "/" in url:
+        elif "/" in url:
             # If URL looks like 'name/repo' then prepend the base GitHub URL
             url = f"https://github.com/{url}"
         else:
@@ -726,7 +738,7 @@ Download one or more new recipe repos and add it to the search path.
 The 'recipe_repo_url' argument can be of the following forms:
 - repo (implies 'https://github.com/autopkg/repo')
 - user/repo (implies 'https://github.com/user/repo')
-- (http[s]://|git://|user@server:)path/to/any/git/repo
+- (http[s]://|git://|ssh://|user@server:)path/to/any/git/repo
 
 Example: '%prog repo-add recipes'
 ..adds the autopkg/recipes repo from GitHub."""
@@ -740,6 +752,11 @@ Example: '%prog repo-add recipes'
     recipe_search_dirs = get_search_dirs()
     recipe_repos = get_pref("RECIPE_REPOS") or {}
     for repo_url in arguments:
+        if "file://" in repo_url:
+            log_err(
+                "AutoPkg does not handle file:// URIs; add to your local Recipes folder instead."
+            )
+            continue
         repo_url = expand_repo_url(repo_url)
         new_recipe_repo_dir = get_recipe_repo(repo_url)
         if new_recipe_repo_dir:
@@ -2317,6 +2334,14 @@ def run_recipes(argv):
                     result = item["Output"][key]
                     summary_text = result.get("summary_text", "")
                     data = result.get("data")
+                    if not data:
+                        log(
+                            'WARNING: Cannot display summary result because "%s" does not have a '
+                            '"data" dictionary. See wiki for more information: '
+                            "https://github.com/autopkg/autopkg/wiki/Processor-Summary-Reporting"
+                            % key
+                        )
+                        continue
                     if key not in summary_results:
                         summary_results[key] = {}
                         summary_results[key]["summary_text"] = summary_text

@@ -64,7 +64,7 @@ class GitHubSession(URLGetter):
         if not token and os.path.exists(token_path):
             try:
                 with open(token_path, "r") as tokenf:
-                    token = tokenf.read()
+                    token = tokenf.read().strip()
             except OSError as err:
                 log_err(f"Couldn't read token file at {token_path}! Error: {err}")
                 token = None
@@ -272,7 +272,7 @@ To save the token, paste it to the following prompt."""
             self.http_result_code = int(header["http_result_code"])
 
         try:
-            with open(temp_content, 'rb') as f:
+            with open(temp_content) as f:
                 resp_data = json.load(f)
         except json.JSONDecodeError:
             resp_data = None

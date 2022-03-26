@@ -16,7 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# 20210418 Nick Heim: Port Windows adaption to V2.3.1
+# 20220326 Nick Heim: Port Windows adaption to V2.4.1
 """See docstring for CodeSignatureVerifier class"""
 
 import os.path

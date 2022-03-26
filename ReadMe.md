@@ -42,8 +42,9 @@ Tested only on 64bit!
 
 **The following software and tools are needed as prequisites to run AutoPkg on Windows:**
 
-* Python 3.8.x: [Download](https://www.python.org/downloads/release/python-3810/) (Caution: pythonnet is still not compatible with Python 3.9)
-  * Needed libraries: pyyaml, appdirs, msl.loadlib, pythonnet, comtypes, pywin32
+* Python 3.8.x: [Download](https://www.python.org/downloads/release/python-3810/) (Caution: pythonnet is still not compatible with Python 3.9/3.10)
+	But you can try using 3.10.x with pythonnet v3.0.0-alpha2 with this command pip install pythonnet --pre
+  * Needed libraries: pyyaml, appdirs, msl.loadlib, pythonnet, comtypes, pywin32, certifi
   * If Python is present, those libs are automatically installed by the AutoPkg installer.
 * Git (highly recomended): [Download](https://git-scm.com/download/win)
 * 7zip: [Download](https://www.7-zip.org/)

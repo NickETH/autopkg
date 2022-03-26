@@ -1,3 +1,7 @@
+### [2.4.1](https://github.com/autopkg/autopkg/compare/v2.3.2...v2.4.1) (March 15, 2022)
+
+### [2.3.2](https://github.com/autopkg/autopkg/compare/v2.3.1...v2.3.2) (December 20, 2021)
+
 ### [2.3.1](https://github.com/autopkg/autopkg/compare/v2.3...v2.3.1) (March 03, 2021)
 
 FIXES:

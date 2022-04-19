@@ -57,10 +57,11 @@ from autopkglib import (
     remove_recipe_extension,
     set_pref,
     version_equal_or_greater,
+	is_windows,			
 )
 from autopkglib.github import GitHubSession, print_gh_search_results
 
-if sys.platform != "darwin":
+if sys.platform not in ["darwin", "win32"]:
     print(
         """
 --------------------------------------------------------------------------------
@@ -806,6 +807,9 @@ def repo_delete(argv):
             recipe_search_dirs.remove(repo_path)
         # now remove the repo files
         try:
+            if is_windows():  #Added for Windows version
+                # we need to remove readonly, hidden and system bits
+                os.system('attrib.exe -r -h -s ' + repo_path + '\\*.* /S /D')
             shutil.rmtree(repo_path)
         except OSError as err:
             log_err(f"ERROR: Could not remove {repo_path}: {err}")

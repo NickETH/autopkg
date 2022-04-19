@@ -16,6 +16,7 @@ Wrapper module that provides a consistent xattr interface
 regardless of platform support.
 """
 from typing import Any, List, Optional
+
 from autopkglib import is_mac, is_windows
 
 __all__ = ["getxattr", "listxattr", "removexattr", "setxattr"]
@@ -23,7 +24,7 @@ __all__ = ["getxattr", "listxattr", "removexattr", "setxattr"]
 # Added for Windows version.
 if is_windows():
     from autopkglib.pyads import pyads
-    
+
     def getxattr(path: str, attr: str, symlink: bool = False) -> Optional[str]:
         handler = pyads.ADS(path)
         if handler.has_streams() and attr in handler.init_streams():
@@ -40,11 +41,16 @@ if is_windows():
             return handler.delete_stream(attr)
         return None
 
-    def setxattr(path: str, attr: str, value: str, options: int = 0, symlink: bool = False) -> None:
+    def setxattr(
+        path: str, attr: str, value: str, options: int = 0, symlink: bool = False
+    ) -> None:
         handler = pyads.ADS(path)
         return handler.add_stream_from_string(attr, value)
+
+
 # End of Windows part.
 else:
+
     class __xattr_wrapper:
         def __init__(self, impl: Any) -> None:
             self._impl = impl
@@ -59,10 +65,14 @@ else:
             return self._impl.removexattr(path, attr, symlink)
 
         def setxattr(
-            self, path: str, attr: str, value: str, options: int = 0, symlink: bool = False
+            self,
+            path: str,
+            attr: str,
+            value: str,
+            options: int = 0,
+            symlink: bool = False,
         ) -> None:
             return self._impl.setxattr(path, attr, value, options, symlink)
-
 
     _xattr = __xattr_wrapper(None)
 
@@ -78,7 +88,9 @@ else:
             xattr module on platforms where it is not supported."""
 
             @staticmethod
-            def getxattr(cls, path: str, attr: str, symlink: bool = False) -> Optional[str]:
+            def getxattr(
+                cls, path: str, attr: str, symlink: bool = False
+            ) -> Optional[str]:
                 return None
 
             @staticmethod

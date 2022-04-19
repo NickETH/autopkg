@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-'''
+"""
 Copyright © 2015, Robin David - MIT-Licensed
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 documentation files (the "Software"), to deal in the Software without restriction, including without limitation
@@ -13,43 +13,49 @@ of contract, tort or otherwise, arising from, out of or in connection with the s
 dealings in the Software.
 Except as contained in this notice, the name of the Robin David shall not be used in advertising or otherwise
 to promote the sale, use or other dealings in this Software without prior written authorization from the Robin David.
-'''
+"""
+import os
+import sys
 from ctypes import *
 
-import sys, os
 kernel32 = windll.kernel32
 
-LPSTR     = c_wchar_p
-DWORD     = c_ulong
-LONG      = c_ulong
-WCHAR     = c_wchar * 296
-LONGLONG  = c_longlong
+LPSTR = c_wchar_p
+DWORD = c_ulong
+LONG = c_ulong
+WCHAR = c_wchar * 296
+LONGLONG = c_longlong
+
 
 class LARGE_INTEGER_UNION(Structure):
     _fields_ = [
         ("LowPart", DWORD),
-        ("HighPart", LONG),]
+        ("HighPart", LONG),
+    ]
+
 
 class LARGE_INTEGER(Union):
     _fields_ = [
         ("large1", LARGE_INTEGER_UNION),
         ("large2", LARGE_INTEGER_UNION),
-        ("QuadPart",    LONGLONG),
+        ("QuadPart", LONGLONG),
     ]
+
 
 class WIN32_FIND_STREAM_DATA(Structure):
     _fields_ = [
         ("StreamSize", LARGE_INTEGER),
         ("cStreamName", WCHAR),
     ]
-    '''
+    """
     typedef struct _WIN32_FIND_STREAM_DATA {
       LARGE_INTEGER StreamSize;
       WCHAR         cStreamName[MAX_PATH + 36];
     } WIN32_FIND_STREAM_DATA, *PWIN32_FIND_STREAM_DATA;
-    '''
+    """
 
-class ADS():
+
+class ADS:
     def __init__(self, filename):
         self.filename = filename
         self.streams = self.init_streams()
@@ -61,8 +67,10 @@ class ADS():
         findFirstStreamW = kernel32.FindFirstStreamW
         findFirstStreamW.restype = c_void_p
 
-        myhandler = kernel32.FindFirstStreamW (LPSTR(self.filename), 0, byref(file_infos), 0)
-        '''
+        myhandler = kernel32.FindFirstStreamW(
+            LPSTR(self.filename), 0, byref(file_infos), 0
+        )
+        """
         HANDLE WINAPI FindFirstStreamW(
           __in        LPCWSTR lpFileName,
           __in        STREAM_INFO_LEVELS InfoLevel, (0 standard, 1 max infos)
@@ -70,12 +78,13 @@ class ADS():
           __reserved  DWORD dwFlags (Reserved for future use. This parameter must be zero.) cf: doc
         );
         https://msdn.microsoft.com/en-us/library/aa364424(v=vs.85).aspx
-        '''
+        """
         p = c_void_p(myhandler)
 
         if file_infos.cStreamName:
             streamname = file_infos.cStreamName.split(":")[1]
-            if streamname: streamlist.append(streamname)
+            if streamname:
+                streamlist.append(streamname)
 
             while kernel32.FindNextStreamW(p, byref(file_infos)):
                 streamlist.append(file_infos.cStreamName.split(":")[1])

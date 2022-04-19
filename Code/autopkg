@@ -50,6 +50,7 @@ from autopkglib import (
     get_pref,
     get_processor,
     is_mac,
+    is_windows,
     log,
     log_err,
     processor_names,
@@ -57,7 +58,6 @@ from autopkglib import (
     remove_recipe_extension,
     set_pref,
     version_equal_or_greater,
-	is_windows,			
 )
 from autopkglib.autopkgyaml import autopkg_str_representer
 from autopkglib.github import GitHubSession, print_gh_search_results

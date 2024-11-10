@@ -1,12 +1,37 @@
-### [2.4.1](https://github.com/autopkg/autopkg/compare/v2.3.2...v2.4.1) (March 15, 2022)
+### [2.7.1](https://github.com/autopkg/autopkg/compare/v2.7.1...HEAD) (Unreleased)
 
-### [2.3.2](https://github.com/autopkg/autopkg/compare/v2.3.1...v2.3.2) (December 20, 2021)
 
-### [2.3.1](https://github.com/autopkg/autopkg/compare/v2.3...v2.3.1) (March 03, 2021)
+### [2.7.0](https://github.com/autopkg/autopkg/compare/v2.6.0...v2.7) (August 22, 2022)
 
+## Python 3.10.6
+AutoPkg now uses Python 3.10.6, and PyObjc 8.5. Python 3.10 brings several new general improvements and may result in some warnings or errors in processors still using some legacy Python2-conversion-to-3-isms. Please file appropriate issues with recipe authors or bring it to our attention in #autopkg in Slack.
+
+## Automated tests on GitHub
+Thanks to the incredible work by @jgstew, AutoPkg now has automatic unit tests and a test recipe being run as an automatic GitHub action! This will help provide confidence in AutoPkg's functionality, and empowers contributors to be more confident in testing their code. Here's hoping this opens up more more people interested in contributing!
+
+Similarly, thanks to @homebysix for doing a similar action for linting, ensuring consistent Python style rules are being applied.
+
+## Other Changes
+* the make_new_release script is a lot easier to use (only really benefits maintainers, but hey)
+* remove incompatibility notice non-macs by @jgstew in https://github.com/autopkg/autopkg/pull/795
+* add automated UnitTests for AutoPkg with GitHub Actions by @jgstew in https://github.com/autopkg/autopkg/pull/796
+* Create linting/auto-formatting workflow in GH Actions by @homebysix in https://github.com/autopkg/autopkg/pull/793
+* Always return list when finding matching pkgs by @octomike in https://github.com/autopkg/autopkg/pull/794
+* Preserve YAML scalar types when writing YAML to disk by @bfreezy in https://github.com/autopkg/autopkg/pull/770
+* MunkiInstallsItemsCreator.py - Add option to derive minimum os version by @macmule in https://github.com/autopkg/autopkg/pull/801
+* Update tests.yaml - remove bad schedule by @jgstew in https://github.com/autopkg/autopkg/pull/815
+* Fix URLGetter.py when default windows curl is used. by @jgstew in https://github.com/autopkg/autopkg/pull/816
+
+**Full Changelog**: https://github.com/autopkg/autopkg/compare/v2.7.0...v2.5
+
+### [2.5.0](https://github.com/autopkg/autopkg/compare/v2.3...v2.5.0) (April 08, 2022)
 FIXES:
 
 - Resolved a bug preventing `autopkg repo-update` and `autopkg repo-delete` operations on local file paths ([#724](https://github.com/autopkg/autopkg/issues/724); fixes [#723](https://github.com/autopkg/autopkg/issues/723) and [lindegroup/autopkgr#666](https://github.com/lindegroup/autopkgr/issues/666))
+- Unarchiver now explicitly clears out `archive_format` variable when finishing execution [#777](https://github.com/autopkg/autopkg/pull/777)
+- Xattr usage on Linux should no longer throw errors [#778](https://github.com/autopkg/autopkg/pull/778)
+- Add a new `asset_url` output variable to GithubReleasesInfoProvider [#779](https://github.com/autopkg/autopkg/pull/779)
+- Prevent MunkiImporter duplicating imports when multiple architectures. This now lets MunkiImporter correctly support Apple Silicon/Universal versions of existing software in the repo. [#781](https://github.com/autopkg/autopkg/pull/781)
 
 ### [2.3](https://github.com/autopkg/autopkg/compare/v2.2...v2.3) (March 01, 2021)
 

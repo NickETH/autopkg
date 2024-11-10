@@ -19,7 +19,7 @@
 import os.path
 import subprocess
 
-from autopkglib import Processor, ProcessorError, find_binary
+from autopkglib import Processor, ProcessorError, find_binary, is_windows
 
 __all__ = ["URLGetter"]
 
@@ -51,6 +51,9 @@ class URLGetter(Processor):
 
     def prepare_curl_cmd(self):
         """Assemble basic curl command and return it."""
+        if is_windows() and "windows\\system32" in self.curl_binary().lower():
+            # if using windows default curl, --compressed is not supported
+            return [self.curl_binary(), "--location"]
         return [self.curl_binary(), "--compressed", "--location"]
 
     def add_curl_headers(self, curl_cmd, headers):
@@ -165,19 +168,17 @@ class URLGetter(Processor):
 
     def execute_curl(self, curl_cmd, text=True):
         """Execute curl command. Return stdout, stderr and return code."""
-        errors = "ignore" if text else None
         try:
             result = subprocess.run(
                 curl_cmd,
                 shell=False,
-                bufsize=1,
                 capture_output=True,
                 check=True,
                 text=text,
-                errors=errors,
             )
         except subprocess.CalledProcessError as e:
-            raise ProcessorError(e)
+            self.output(f"ERROR: {e.stderr.removeprefix('curl: ')}")
+            raise ProcessorError(e.stderr) from e
         return result.stdout, result.stderr, result.returncode
 
     def download_with_curl(self, curl_cmd, text=True):

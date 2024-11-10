@@ -216,7 +216,7 @@ class Preferences:
 
     def _get_file_prefs(self):
         r"""Lookup preferences for Windows in a standardized path, such as:
-        * `C:\Users\username\AppData\Roaming\Autopkg\config.{plist,json}`
+        * `C:\\Users\username\AppData\Roaming\Autopkg\config.{plist,json}`
         * `/home/username/.config/Autopkg/config.{plist,json}`
         Tries to find `config.plist`, then `config.json`."""
         # Windows configuration files should go to the Appdata\Roaming dir.
@@ -1077,6 +1077,25 @@ def processor_names():
 def core_processor_names():
     """Returns the names of the 'core' processors"""
     return _CORE_PROCESSOR_NAMES
+
+
+def plist_serializer(obj):
+    """Serialize an object to ensure it can be dumped in plist format.
+
+    Args:
+        obj (dict, list): Object is assumed to be either a dict or list
+            that will be parsed.
+
+    Returns:
+        (any): The received object will be returned, modified if required.
+    """
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            obj[k] = "" if v is None else plist_serializer(v)
+    elif isinstance(obj, list):
+        for item in range(len(obj)):
+            plist_serializer(obj[item])
+    return obj
 
 
 # when importing autopkglib, need to also import all the processors

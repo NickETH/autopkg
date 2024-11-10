@@ -2,6 +2,8 @@
 #
 # Copyright 2014 Hannes Juutilainen
 #
+# Inital Windows support by Nick McSpadden, 2018
+# 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,6 +15,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# 20220326 Nick Heim: Port Windows adaption to V2.4.1
 """See docstring for CodeSignatureVerifier class"""
 
 import os.path
@@ -23,6 +27,7 @@ from glob import glob
 
 from autopkglib import ProcessorError
 from autopkglib.DmgMounter import DmgMounter
+from autopkglib import is_mac
 
 __all__ = ["CodeSignatureVerifier"]
 
@@ -32,7 +37,7 @@ RE_AUTHORITY_PKGUTIL = re.compile(r"\s+[1-9]+\. (?P<authority>.*)\n")
 class CodeSignatureVerifier(DmgMounter):
     """Verifies application bundle or installer package signature.
 
-    Requires version 0.3.1."""
+    Requires version 1.3.1."""
 
     input_variables = {
         "DISABLE_CODE_SIGNATURE_VERIFICATION": {
@@ -298,6 +303,9 @@ class CodeSignatureVerifier(DmgMounter):
                 self.output("Authority name chain is valid")
 
     def main(self):
+        if not is_mac():
+            self.output("Not on macOS, not running Code Signature Verification")
+            return
         if self.env.get("DISABLE_CODE_SIGNATURE_VERIFICATION"):
             self.output("Code signature verification disabled for this recipe run.")
             return

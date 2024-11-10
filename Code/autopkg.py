@@ -50,6 +50,7 @@ from autopkglib import (
     get_pref,
     get_processor,
     is_mac,
+    is_windows,
     log,
     log_err,
     processor_names,
@@ -57,24 +58,21 @@ from autopkglib import (
     remove_recipe_extension,
     set_pref,
     version_equal_or_greater,
-	is_windows,
 )
+from autopkglib.autopkgyaml import autopkg_str_representer
 from autopkglib.github import GitHubSession, print_gh_search_results
-
-# if sys.platform != "darwin":
-    # print(
-        # """
-# --------------------------------------------------------------------------------
-# -- WARNING: AutoPkg is not completely functional on platforms other than OS X --
-# --------------------------------------------------------------------------------
-# """
-    # )
 
 # Catch Python 2 wrappers with an early f-string. Message must be on a single line.
 _ = f"""{sys.version_info.major} It looks like you're running the autopkg tool with an incompatible version of Python. Please update your script to use autopkg's included Python (/usr/local/autopkg/python). AutoPkgr users please note that AutoPkgr 1.5.1 and earlier is NOT compatible with autopkg 2. """  # noqa
 
 # If any recipe fails during 'autopkg run', return this exit code
 RECIPE_FAILED_CODE = 70
+
+# Override global yaml state with our str representer
+# See https://github.com/autopkg/autopkg/issues/768
+yaml.add_representer(str, autopkg_str_representer)
+# to use with safe_dump:
+yaml.representer.SafeRepresenter.add_representer(str, autopkg_str_representer)
 
 
 def print_version(argv):
@@ -159,7 +157,8 @@ def find_recipe_by_name(name, search_dirs):
     name = remove_recipe_extension(name)
     # search by "Name", using file/directory hierarchy rules
     for directory in search_dirs:
-        # TODO: Combine with similar code in get_recipe_list() and find_recipe_by_identifier()
+        # TODO: Combine with similar code in get_recipe_list()
+        # and find_recipe_by_identifier()
         normalized_dir = os.path.abspath(os.path.expanduser(directory))
         patterns = [os.path.join(normalized_dir, f"{name}{ext}") for ext in RECIPE_EXTS]
         patterns.extend(
@@ -526,7 +525,7 @@ def run_git(git_options_and_arguments, git_directory=None):
         )
         (cmd_out, cmd_err) = proc.communicate()
     except OSError as err:
-        raise GitError(
+        raise GitError from OSError(
             f"ERROR: git execution failed with error code {err.errno}: "
             f"{err.strerror}"
         )
@@ -640,8 +639,7 @@ def save_pref_or_warn(key, value):
 def get_search_dirs():
     """Return search dirs from preferences or default list"""
     default = [".", "~/Library/AutoPkg/Recipes", "/Library/AutoPkg/Recipes"]
-    if is_windows(): #Added for Windows version
-        default = [".", "%APPDATA%\AutoPkg\Recipes", "%ALLUSERSPROFILE%\AutoPkg\Recipes"]                                                                                        
+
     dirs = get_pref("RECIPE_SEARCH_DIRS")
     if isinstance(dirs, str):
         # convert a string to a list
@@ -754,7 +752,8 @@ Example: '%prog repo-add recipes'
     for repo_url in arguments:
         if "file://" in repo_url:
             log_err(
-                "AutoPkg does not handle file:// URIs; add to your local Recipes folder instead."
+                "AutoPkg does not handle file:// URIs; "
+                "add to your local Recipes folder instead."
             )
             continue
         repo_url = expand_repo_url(repo_url)
@@ -808,9 +807,9 @@ def repo_delete(argv):
             recipe_search_dirs.remove(repo_path)
         # now remove the repo files
         try:
-            if is_windows():  #Added for Windows version
+            if is_windows():
                 # we need to remove readonly, hidden and system bits
-                os.system('attrib.exe -r -h -s ' + repo_path + '\\*.* /S /D')
+                os.system("attrib.exe -r -h -s " + repo_path + "\\*.* /S /D")
             shutil.rmtree(repo_path)
         except OSError as err:
             log_err(f"ERROR: Could not remove {repo_path}: {err}")
@@ -1116,7 +1115,8 @@ def get_recipe_list(
 
     recipes = []
     for directory in search_dirs:
-        # TODO: Combine with similar code in find_recipe_by_name() and find_recipe_by_identifier()
+        # TODO: Combine with similar code in find_recipe_by_name()
+        # and find_recipe_by_identifier()
         normalized_dir = os.path.abspath(os.path.expanduser(directory))
         if not os.path.isdir(normalized_dir):
             continue
@@ -1348,7 +1348,7 @@ def getsha256hash(filepath):
     hashfunction = hashlib.sha256()
     fileref = open(filepath, "rb")
     while 1:
-        chunk = fileref.read(2 ** 16)
+        chunk = fileref.read(2**16)
         if not chunk:
             break
         hashfunction.update(chunk)
@@ -2336,7 +2336,8 @@ def run_recipes(argv):
                     data = result.get("data")
                     if not data:
                         log(
-                            'WARNING: Cannot display summary result because "%s" does not have a '
+                            'WARNING: Cannot display summary result because "%s" '
+                            "does not have a "
                             '"data" dictionary. See wiki for more information: '
                             "https://github.com/autopkg/autopkg/wiki/Processor-Summary-Reporting"
                             % key

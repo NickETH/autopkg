@@ -83,18 +83,9 @@ else:
     except ImportError:
         print("WARNING: Library 'xattr' unavailable. Defining no-op implementation.")
 
-<<<<<<< HEAD
         class __xattr_stub:
             """A stub class that will perform noop for any calls to the
             xattr module on platforms where it is not supported."""
-=======
-def getxattr(path: str, attr: str, symlink: bool = False) -> Optional[str]:
-    try:
-        return _xattr.getxattr(path, attr, symlink)
-    except OSError as e:
-        print(f"WARNING: xattr.getxattr threw OSError. {e}")
-        return None
->>>>>>> 2eff0b31ba482a61f22cf5179c3b3d0b70ddf1c8
 
             @staticmethod
             def getxattr(
@@ -102,24 +93,14 @@ def getxattr(path: str, attr: str, symlink: bool = False) -> Optional[str]:
             ) -> Optional[str]:
                 return None
 
-<<<<<<< HEAD
             @staticmethod
             def listxattr(cls, path: str, symlink: bool = False) -> List[str]:
                 return []
-=======
-def listxattr(path: str, symlink: bool = False) -> List[str]:
-    try:
-        return _xattr.listxattr(path, symlink)
-    except OSError as e:
-        print(f"WARNING: xattr.listxattr threw OSError. {e}")
-        return []
->>>>>>> 2eff0b31ba482a61f22cf5179c3b3d0b70ddf1c8
 
             @staticmethod
             def removexattr(cls, path: str, attr: str, symlink: bool = False) -> None:
                 return None
 
-<<<<<<< HEAD
             @staticmethod
             def setxattr(
                 cls,
@@ -130,18 +111,9 @@ def listxattr(path: str, symlink: bool = False) -> List[str]:
                 symlink: bool = False,
             ) -> None:
                 return None
-=======
-def removexattr(path: str, attr: str, symlink: bool = False) -> None:
-    try:
-        return _xattr.removexattr(path, attr, symlink)
-    except OSError as e:
-        print(f"WARNING: xattr.removexattr threw OSError. {e}")
-        return None
->>>>>>> 2eff0b31ba482a61f22cf5179c3b3d0b70ddf1c8
 
         _xattr = __xattr_wrapper(__xattr_stub)
 
-<<<<<<< HEAD
     assert (
         _xattr._impl is not None
     ), "Failed to initialize xattr library, or stub. This is a bug."
@@ -159,13 +131,3 @@ def removexattr(path: str, attr: str, symlink: bool = False) -> None:
         path: str, attr: str, value: str, options: int = 0, symlink: bool = False
     ) -> None:
         return _xattr.setxattr(path, attr, value, options, symlink)
-=======
-def setxattr(
-    path: str, attr: str, value: str, options: int = 0, symlink: bool = False
-) -> None:
-    try:
-        return _xattr.setxattr(path, attr, value, options, symlink)
-    except OSError as e:
-        print(f"WARNING: xattr.setxattr threw OSError. {e}")
-        return None
->>>>>>> 2eff0b31ba482a61f22cf5179c3b3d0b70ddf1c8

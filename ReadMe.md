@@ -44,7 +44,7 @@ An Installation-Script for everything need can be found here: https://github.com
 
 **The following software and tools are needed as prequisites to run AutoPkg on Windows:**
 
-* Python 3.10-3.12: [Download](https://www.python.org/downloads/) (
+* Python 3.9-3.11 (Caution: AutoPkg is acutally not compatible with 3.12 and up)
   * Needed libraries: pyyaml, appdirs, msl.loadlib, pythonnet, comtypes, pywin32, certifi
   * If Python is present, those libs are automatically installed by the AutoPkg installer.
 * Git (highly recomended): [Download](https://git-scm.com/download/win)

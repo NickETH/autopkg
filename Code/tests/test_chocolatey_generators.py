@@ -1,5 +1,7 @@
 #!/usr/local/autopkg/python
 #
+# Copyright 2020 Brian Smith
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,8 +15,8 @@
 # limitations under the License.
 
 import unittest
+from collections.abc import Sequence
 from textwrap import dedent
-from typing import Optional, Sequence, Tuple
 
 from nuget import (
     ChocolateyInstallGenerator,
@@ -29,8 +31,7 @@ class TestNuspecGenerator(unittest.TestCase):
         self.maxDiff = 100000
 
     def test_nuspec_generator_basic_rendering(self):
-        expected = dedent(
-            """\
+        expected = dedent("""\
 <package xmlns:mstns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd" xmlns:None="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd" >
     <metadata>
         <id>test</id>
@@ -41,8 +42,7 @@ class TestNuspecGenerator(unittest.TestCase):
         <dependencies/>
     </metadata>
 </package>
-        """
-        )
+        """)
         pkg = NuspecGenerator(
             id="test",
             title="Test software",
@@ -52,7 +52,7 @@ class TestNuspecGenerator(unittest.TestCase):
         )
         xml = pkg.render_str()
         self.assertTrue(len(xml) > 0)
-        self.assertEquals(expected, xml)
+        self.assertEqual(expected, xml)
 
     def test_nuspec_generator_basic_validation(self):
         # Test that our custom field requirement is honored.
@@ -73,12 +73,9 @@ class TestNuspecGenerator(unittest.TestCase):
 
 
 class TestChocolateyInstallGenerator(unittest.TestCase):
-
-    COMMON_HEADER = dedent(
-        """\
+    COMMON_HEADER = dedent("""\
 $ErrorActionPreference = 'Stop'
-$toolsDir = "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\""""
-    )
+$toolsDir = "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\"""")
 
     def setUp(self):
         self.maxDiff = 100000
@@ -86,7 +83,7 @@ $toolsDir = "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\""""
     def test_basic_validation(self):
         # Only validating error cases for now.
         validation_cases: Sequence[
-            Tuple[str, ChocolateyInstallGenerator, Optional[Exception]]
+            tuple[str, ChocolateyInstallGenerator, Exception | None]
         ] = (
             (
                 "empty packageName",
@@ -163,8 +160,7 @@ $toolsDir = "$(Split-Path -Parent $MyInvocation.MyCommand.Definition)\""""
                     object._validate()
 
     def test_basic_rendering(self):
-        expected = dedent(
-            f"""\
+        expected = dedent(f"""\
 {self.COMMON_HEADER}
 $file = Join-Path $toolsDir 'fake.installer.exe'
 $packageArgs = @{{
@@ -177,10 +173,9 @@ $packageArgs = @{{
 
 Install-ChocolateyInstallPackage @packageArgs
 
-            """
-        )
+            """)
 
-        self.assertEquals(
+        self.assertEqual(
             expected,
             ChocolateyInstallGenerator(
                 packageName="fakepkg",
@@ -189,6 +184,45 @@ Install-ChocolateyInstallPackage @packageArgs
                 checksum="notarealchecksumitsokay",
                 checksumType="sha1",
             ).render_str(),
+        )
+
+    def test_string_fields_escape_single_quotes(self):
+        rendered = ChocolateyInstallGenerator(
+            packageName="fake'pkg",
+            fileType="exe",
+            silentArgs="/S /D=/Applications/Bob's App",
+            url="https://example.com/downloads/Bob's App.exe",
+            checksum="notarealchecksumitsokay",
+            checksumType="sha1",
+        ).render_str()
+
+        self.assertIn("packageName = 'fake''pkg'", rendered)
+        self.assertIn("silentArgs = '/S /D=/Applications/Bob''s App'", rendered)
+        self.assertIn("url = 'https://example.com/downloads/Bob''s App.exe'", rendered)
+
+    def test_file_basenames_escape_single_quotes(self):
+        rendered = ChocolateyInstallGenerator(
+            packageName="fakepkg",
+            fileType="exe",
+            file="C:/convenient/filesystem/path/Bob's Installer.exe",
+            file64="C:/convenient/filesystem/path/Alice's Installer.exe",
+        ).render_str()
+
+        self.assertIn("$file = Join-Path $toolsDir 'Bob''s Installer.exe'", rendered)
+        self.assertIn(
+            "$file64 = Join-Path $toolsDir 'Alice''s Installer.exe'", rendered
+        )
+
+    def test_list_values_render_elements_by_type(self):
+        generator = ChocolateyInstallGenerator(
+            packageName="fakepkg",
+            fileType="exe",
+            file="fake.installer.exe",
+        )
+
+        self.assertEqual(
+            "@(0,'can''t',$False)",
+            generator._render_field("futureList", [0, "can't", False], []),
         )
 
 

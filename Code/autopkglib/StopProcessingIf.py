@@ -22,13 +22,13 @@
 
 """See docstring for StopProcessingIf class"""
 
-from autopkglib import Processor, ProcessorError, log, is_mac, is_windows
+from autopkglib import Processor, ProcessorError, log_err, is_mac, is_windows
 
 if is_mac():  # Added on Windows version
     try:
         from Foundation import NSPredicate
     except ImportError:
-        log("WARNING: Failed 'from Foundation import NSPredicate' in " + __name__)
+        log_err("WARNING: Failed 'from Foundation import NSPredicate' in " + __name__)
 
 __all__ = ["StopProcessingIf"]
 
@@ -38,12 +38,13 @@ class StopProcessingIf(Processor):
     predicate comparison evaluates to true."""
 
     description = __doc__
+    lifecycle = {"introduced": "0.1.0"}
     input_variables = {
         "predicate": {
             "required": True,
             "description": (
                 "NSPredicate-style comparison against an environment key. See "
-                "http://developer.apple.com/library/mac/#documentation/"
+                "https://developer.apple.com/library/archive/documentation/"
                 "Cocoa/Conceptual/Predicates/Articles/pSyntax.html"
             ),
         }
@@ -98,12 +99,10 @@ class StopProcessingIf(Processor):
 
             except Exception as err:
                 raise ProcessorError(f"Predicate error for '{predicate_string}': {err}")
-
             self.output(f"({predicate_string}) is {result}")
-            
         return result
 
-    def main(self):
+    def main(self) -> None:
         self.env["stop_processing_recipe"] = self.predicate_evaluates_as_true(
             self.env["predicate"]
         )

@@ -13,8 +13,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Place-holder processor that autopkg uses to mark the end of the check
-phase."""
+
+"""See docstring for EndOfCheckPhase class"""
+
+from typing import Any
 
 from autopkglib import Processor
 
@@ -22,14 +24,15 @@ __all__ = ["EndOfCheckPhase"]
 
 
 class EndOfCheckPhase(Processor):
-    """This processor performs no action, but serves as a marker to signal
-    where AutoPkg should stop when the -c/--check options are used."""
+    """This processor performs no action, but serves as a marker to signal where AutoPkg
+    should stop when the -c/--check options are used."""
 
-    input_variables = {}
-    output_variables = {}
     description = __doc__
+    lifecycle = {"introduced": "0.1.0"}
+    input_variables: dict[str, Any] = {}
+    output_variables: dict[str, Any] = {}
 
-    def main(self):
+    def main(self) -> None:
         return
 
 

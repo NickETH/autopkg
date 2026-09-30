@@ -11,16 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# 20210529 Nick Heim: Adaption for Windows. Transfer the pyads stuff to this module
+# 20220110 Nick Heim: Correction on listxattr. return None trows an error on files with no etag
+
 """
 Wrapper module that provides a consistent xattr interface
 regardless of platform support.
 """
-from typing import Any, List, Optional
 
-from autopkglib import is_mac, is_windows
+# from typing import Any
+from typing import Any, List, Optional
+from autopkglib import log_err, is_mac, is_windows
 
 __all__ = ["getxattr", "listxattr", "removexattr", "setxattr"]
-
 # Added for Windows version.
 if is_windows():
     from autopkglib.pyads import pyads
@@ -41,12 +45,9 @@ if is_windows():
             return handler.delete_stream(attr)
         return None
 
-    def setxattr(
-        path: str, attr: str, value: str, options: int = 0, symlink: bool = False
-    ) -> None:
+    def setxattr(path: str, attr: str, value: str, options: int = 0, symlink: bool = False) -> None:
         handler = pyads.ADS(path)
         return handler.add_stream_from_string(attr, value)
-
 
 # End of Windows part.
 else:
@@ -58,21 +59,17 @@ else:
         def getxattr(self, path: str, attr: str, symlink: bool = False) -> str:
             return self._impl.getxattr(path, attr, symlink)
 
-        def listxattr(self, path: str, symlink: bool = False) -> List[str]:
+        def listxattr(self, path: str, symlink: bool = False) -> list[str]:
             return self._impl.listxattr(path, symlink)
 
         def removexattr(self, path: str, attr: str, symlink: bool = False) -> None:
             return self._impl.removexattr(path, attr, symlink)
 
         def setxattr(
-            self,
-            path: str,
-            attr: str,
-            value: str,
-            options: int = 0,
-            symlink: bool = False,
+            self, path: str, attr: str, value: str, options: int = 0, symlink: bool = False
         ) -> None:
             return self._impl.setxattr(path, attr, value, options, symlink)
+
 
     _xattr = __xattr_wrapper(None)
 
@@ -81,20 +78,18 @@ else:
 
         _xattr = __xattr_wrapper(_xattr_real)
     except ImportError:
-        print("WARNING: Library 'xattr' unavailable. Defining no-op implementation.")
+        log_err("WARNING: Library 'xattr' unavailable. Defining no-op implementation.")
 
         class __xattr_stub:
             """A stub class that will perform noop for any calls to the
             xattr module on platforms where it is not supported."""
 
             @staticmethod
-            def getxattr(
-                cls, path: str, attr: str, symlink: bool = False
-            ) -> Optional[str]:
+            def getxattr(cls, path: str, attr: str, symlink: bool = False) -> str | None:
                 return None
 
             @staticmethod
-            def listxattr(cls, path: str, symlink: bool = False) -> List[str]:
+            def listxattr(cls, path: str, symlink: bool = False) -> list[str]:
                 return []
 
             @staticmethod
@@ -114,20 +109,36 @@ else:
 
         _xattr = __xattr_wrapper(__xattr_stub)
 
-    assert (
-        _xattr._impl is not None
-    ), "Failed to initialize xattr library, or stub. This is a bug."
 
-    def getxattr(path: str, attr: str, symlink: bool = False) -> Optional[str]:
-        return _xattr.getxattr(path, attr, symlink)
+    def getxattr(path: str, attr: str, symlink: bool = False) -> str | None:
+        try:
+            return _xattr.getxattr(path, attr, symlink)
+        except OSError as e:
+            log_err(f"WARNING: xattr.getxattr threw OSError. {e}")
+            return None
 
-    def listxattr(path: str, symlink: bool = False) -> List[str]:
-        return _xattr.listxattr(path, symlink)
+
+    def listxattr(path: str, symlink: bool = False) -> list[str]:
+        try:
+            return _xattr.listxattr(path, symlink)
+        except OSError as e:
+            log_err(f"WARNING: xattr.listxattr threw OSError. {e}")
+            return []
+
 
     def removexattr(path: str, attr: str, symlink: bool = False) -> None:
-        return _xattr.removexattr(path, attr, symlink)
+        try:
+            return _xattr.removexattr(path, attr, symlink)
+        except OSError as e:
+            log_err(f"WARNING: xattr.removexattr threw OSError. {e}")
+            return None
+
 
     def setxattr(
         path: str, attr: str, value: str, options: int = 0, symlink: bool = False
     ) -> None:
-        return _xattr.setxattr(path, attr, value, options, symlink)
+        try:
+            return _xattr.setxattr(path, attr, value, options, symlink)
+        except OSError as e:
+            log_err(f"WARNING: xattr.setxattr threw OSError. {e}")
+            return None

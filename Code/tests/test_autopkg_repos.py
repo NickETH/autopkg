@@ -1,0 +1,1471 @@
+#!/usr/local/autopkg/python
+#
+# Copyright 2021 Elliot Jordan
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import os
+import sys
+import unittest
+from unittest.mock import Mock, patch
+
+# Add the Code directory to the Python path to resolve autopkg dependencies
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from tests import load_autopkg_module
+
+autopkg = load_autopkg_module()
+
+
+class TestAutoPkgRepos(unittest.TestCase):
+    """Test cases for repository-related functions of AutoPkg."""
+
+    def setUp(self):
+        """Silence recipe-map side effects triggered by repo-add/repo-delete/
+        repo-update. Tests that care about the map patch it explicitly."""
+        self._recipe_map_patches = [
+            patch("autopkg.calculate_recipe_map"),
+            patch("autopkg.read_recipe_map"),
+        ]
+        (
+            self.mock_calculate_recipe_map,
+            self.mock_read_recipe_map,
+        ) = [patcher.start() for patcher in self._recipe_map_patches]
+
+    def tearDown(self):
+        for patcher in self._recipe_map_patches:
+            patcher.stop()
+
+    def _run_repo_update_with_git(
+        self,
+        arguments,
+        run_git_side_effect,
+        repo_path="/repo/path",
+        recipe_repos=None,
+    ):
+        """Run repo_update with common parser/path/log mocks."""
+        with (
+            patch("autopkg.common_parse") as mock_common_parse,
+            patch("autopkg.gen_common_parser") as mock_gen_parser,
+            patch("autopkg.get_pref") as mock_get_pref,
+            patch("autopkg.get_repo_info") as mock_get_repo_info,
+            patch("autopkg.expand_repo_url") as mock_expand_repo_url,
+            patch("autopkg.run_git") as mock_run_git,
+            patch("autopkg.log") as mock_log,
+            patch("autopkg.log_err") as mock_log_err,
+            patch("os.path.abspath") as mock_abspath,
+            patch("os.path.expanduser") as mock_expanduser,
+        ):
+            mock_gen_parser.return_value = Mock()
+            mock_common_parse.return_value = (Mock(), arguments)
+            mock_get_pref.return_value = recipe_repos or {
+                repo_path: {"URL": "https://github.com/autopkg/recipes"}
+            }
+            mock_get_repo_info.return_value = {"path": repo_path}
+            mock_expand_repo_url.side_effect = lambda x: x
+            mock_expanduser.side_effect = lambda x: x
+            mock_abspath.side_effect = lambda x: x
+            mock_run_git.side_effect = run_git_side_effect
+
+            autopkg.repo_update([None, "repo-update", *arguments])
+
+        return mock_run_git, mock_log, mock_log_err
+
+    def _stable_repo_update_git(
+        self,
+        branch="main",
+        origin_main=False,
+        origin_master=False,
+        migration_error=None,
+    ):
+        """Return a run_git side effect for an unchanged repo_update."""
+
+        def run_git_side_effect(args, git_directory=None):
+            if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+                return f"{branch}\n"
+            if args == ["fetch", "origin", "--prune"]:
+                return "Fetched"
+            if args == [
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/main",
+            ]:
+                if origin_main:
+                    return ""
+                raise autopkg.GitError("not found")
+            if args == [
+                "show-ref",
+                "--verify",
+                "--quiet",
+                "refs/remotes/origin/master",
+            ]:
+                if origin_master:
+                    return ""
+                raise autopkg.GitError("not found")
+            if args == ["branch", "-m", "master", "main"]:
+                if migration_error:
+                    raise migration_error
+                return ""
+            if args in (
+                ["branch", "--set-upstream-to=origin/main", "main"],
+                [
+                    "symbolic-ref",
+                    "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/main",
+                ],
+            ):
+                return ""
+            if args == ["rev-parse", "HEAD"]:
+                return "samehash\n"
+            if args == ["pull"]:
+                return "Already up to date."
+            self.fail(f"Unexpected git command: {args!r} in {git_directory!r}")
+
+        return run_git_side_effect
+
+    def test_expand_single_autopkg_org_urls(self):
+        """Expand single part short repo URLs in the AutoPkg org on GitHub"""
+        url = autopkg.expand_repo_url("recipes")
+        self.assertEqual(url, "https://github.com/autopkg/recipes")
+        url = autopkg.expand_repo_url("bogus")
+        self.assertEqual(url, "https://github.com/autopkg/bogus")
+
+    def test_expand_multi_autopkg_org_urls(self):
+        """Expand multi part short repo URLs in the AutoPkg org on GitHub"""
+        url = autopkg.expand_repo_url("autopkg/recipes")
+        self.assertEqual(url, "https://github.com/autopkg/recipes")
+        url = autopkg.expand_repo_url("autopkg/bogus")
+        self.assertEqual(url, "https://github.com/autopkg/bogus")
+
+    def test_expand_multi_other_org_urls(self):
+        """Expand multi part short repo URLs in another org on GitHub"""
+        url = autopkg.expand_repo_url("eth-its/autopkg-mac-recipes")
+        self.assertEqual(url, "https://github.com/eth-its/autopkg-mac-recipes")
+        url = autopkg.expand_repo_url("facebook/Recipes-For-AutoPkg")
+        self.assertEqual(url, "https://github.com/facebook/Recipes-For-AutoPkg")
+        url = autopkg.expand_repo_url("bogusorg/bogusrepo")
+        self.assertEqual(url, "https://github.com/bogusorg/bogusrepo")
+
+    def test_expand_full_urls(self):
+        """Expand full URLs"""
+        url = autopkg.expand_repo_url("http://github.com/eth-its/autopkg-mac-recipes")
+        self.assertEqual(url, "http://github.com/eth-its/autopkg-mac-recipes")
+        url = autopkg.expand_repo_url("https://github.com/eth-its/autopkg-mac-recipes")
+        self.assertEqual(url, "https://github.com/eth-its/autopkg-mac-recipes")
+        url = autopkg.expand_repo_url("http://github.com/facebook/Recipes-For-AutoPkg")
+        self.assertEqual(url, "http://github.com/facebook/Recipes-For-AutoPkg")
+        url = autopkg.expand_repo_url("https://github.com/facebook/Recipes-For-AutoPkg")
+        self.assertEqual(url, "https://github.com/facebook/Recipes-For-AutoPkg")
+        url = autopkg.expand_repo_url("http://github.com/bogusorg/bogusrepo")
+        self.assertEqual(url, "http://github.com/bogusorg/bogusrepo")
+        url = autopkg.expand_repo_url("https://github.com/bogusorg/bogusrepo")
+        self.assertEqual(url, "https://github.com/bogusorg/bogusrepo")
+
+    # TODO: Not yet implemented.
+    # def test_expand_file_urls(self):
+    #     """Expand file URLs"""
+    #     url = autopkg.expand_repo_url("file:///private/tmp/")
+    #     self.assertEqual(url, "/private/tmp/")
+    #     url = autopkg.expand_repo_url("file:///foo/bar/")
+    #     self.assertEqual(url, "/foo/bar/")
+
+    def test_expand_file_paths(self):
+        """Expand file paths"""
+        url = autopkg.expand_repo_url("/private/tmp/")
+        self.assertEqual(url, "/private/tmp")
+        url = autopkg.expand_repo_url("/foo/bar/")
+        self.assertEqual(url, "/foo/bar")
+        url = autopkg.expand_repo_url("/foo/bar")
+        self.assertEqual(url, "/foo/bar")
+        url = autopkg.expand_repo_url(
+            "~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        self.assertEqual(
+            url, "~/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        url = autopkg.expand_repo_url("/Users/Shared/foo")
+        self.assertEqual(url, "/Users/Shared/foo")
+
+    # Tests for get_repository_from_identifier function
+    @patch("autopkg.load_search_index")
+    def test_get_repository_from_identifier_strips_autopkg_org(self, mock_index):
+        """Repos in the autopkg org are returned by short name."""
+        mock_index.return_value = {
+            "identifiers": {
+                "com.github.test-recipes.pkg.TestApp": {
+                    "path": "TestApp/TestApp.pkg.recipe.yaml",
+                    "repo": "autopkg/test-recipes",
+                }
+            }
+        }
+        self.assertEqual(
+            autopkg.get_repository_from_identifier(
+                "com.github.test-recipes.pkg.TestApp"
+            ),
+            "test-recipes",
+        )
+
+    @patch("autopkg.load_search_index")
+    def test_get_repository_from_identifier_keeps_other_owner(self, mock_index):
+        """Repos outside the autopkg org keep their owner prefix."""
+        mock_index.return_value = {
+            "identifiers": {"local.test.TestApp": {"repo": "someone/test-recipes"}}
+        }
+        self.assertEqual(
+            autopkg.get_repository_from_identifier("local.test.TestApp"),
+            "someone/test-recipes",
+        )
+
+    @patch("autopkg.load_search_index")
+    def test_get_repository_from_identifier_not_found(self, mock_index):
+        """Unknown identifiers, shortnames, and an unloadable index return None."""
+        mock_index.return_value = {"identifiers": {}}
+        self.assertIsNone(autopkg.get_repository_from_identifier("com.test.recipe"))
+        self.assertIsNone(autopkg.get_repository_from_identifier("TestApp"))
+        mock_index.return_value = {}
+        self.assertIsNone(autopkg.get_repository_from_identifier("com.test.recipe"))
+        mock_index.return_value = {"identifiers": {"com.test.recipe": {}}}
+        self.assertIsNone(autopkg.get_repository_from_identifier("com.test.recipe"))
+
+    def test_recipe_repo_is_added_url_spellings(self):
+        """Equivalent GitHub URL spellings count as added; others don't."""
+        cases = {
+            "https://github.com/autopkg/example-recipes": True,
+            "https://github.com/autopkg/example-recipes.git": True,
+            "https://github.com/autopkg/Example-Recipes/": True,
+            "ssh://git@github.com/autopkg/example-recipes": True,
+            "git@github.com:autopkg/example-recipes.git": True,
+            "https://github.com/notautopkg/example-recipes": False,
+            "https://github.com/autopkg/other-example-recipes": False,
+        }
+        for url, expected in cases.items():
+            with (
+                self.subTest(url=url),
+                patch(
+                    "autopkg.get_pref",
+                    return_value={"/path/repo": {"URL": url}},
+                ),
+            ):
+                self.assertEqual(
+                    autopkg.recipe_repo_is_added("example-recipes"), expected
+                )
+
+    def test_recipe_repo_is_added_owner_repo(self):
+        """Repos outside the autopkg org match by owner/repo."""
+        with patch(
+            "autopkg.get_pref",
+            return_value={"/p": {"URL": "https://github.com/someone/x-recipes.git"}},
+        ):
+            self.assertTrue(autopkg.recipe_repo_is_added("someone/x-recipes"))
+            self.assertFalse(autopkg.recipe_repo_is_added("x-recipes"))
+        with patch("autopkg.get_pref", return_value=None):
+            self.assertFalse(autopkg.recipe_repo_is_added("x-recipes"))
+
+    # Tests for get_recipe_repo function
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    def test_get_recipe_repo_clone_new_repo(
+        self,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo cloning a new repository."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_abspath.return_value = (
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        mock_exists.return_value = False  # Directory doesn't exist
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.return_value = "Cloning into 'recipes'..."
+
+        with patch("autopkg.log") as mock_log:
+            result = autopkg.get_recipe_repo("https://github.com/autopkg/recipes")
+
+            self.assertEqual(
+                result,
+                "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes",
+            )
+            mock_git_cmd.assert_called_once()
+            mock_run_git.assert_called_once_with(
+                [
+                    "clone",
+                    "https://github.com/autopkg/recipes",
+                    "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes",
+                ]
+            )
+            mock_log.assert_called()
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    @patch("os.path.isdir")
+    def test_get_recipe_repo_pull_existing_repo(
+        self,
+        mock_isdir,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo pulling an existing repository."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_abspath.return_value = (
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        mock_exists.return_value = True  # Directory exists
+        mock_isdir.return_value = True  # .git directory exists
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.return_value = "Already up to date."
+
+        with patch("autopkg.log") as mock_log:
+            result = autopkg.get_recipe_repo("https://github.com/autopkg/recipes")
+
+            self.assertEqual(
+                result,
+                "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes",
+            )
+            mock_git_cmd.assert_called_once()
+            mock_run_git.assert_called_once_with(
+                ["pull"],
+                git_directory="/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes",
+            )
+            mock_log.assert_called()
+
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.log_err")
+    def test_get_recipe_repo_no_git_command(self, mock_log_err, mock_git_cmd):
+        """Test get_recipe_repo when git command is not available."""
+        mock_git_cmd.return_value = None
+
+        result = autopkg.get_recipe_repo("https://github.com/autopkg/recipes")
+
+        self.assertIsNone(result)
+        mock_log_err.assert_called_once_with("No git binary could be found!")
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    @patch("os.path.isdir")
+    @patch("autopkg.log_err")
+    def test_get_recipe_repo_existing_non_git_directory(
+        self,
+        mock_log_err,
+        mock_isdir,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo when directory exists but is not a git repo."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_abspath.return_value = (
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        mock_exists.return_value = True  # Directory exists
+        mock_isdir.return_value = False  # .git directory doesn't exist
+        mock_git_cmd.return_value = "/usr/bin/git"
+
+        result = autopkg.get_recipe_repo("https://github.com/autopkg/recipes")
+
+        self.assertIsNone(result)
+        mock_log_err.assert_called_once_with(
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes exists and is not a git repo!"
+        )
+        mock_run_git.assert_not_called()
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    @patch("autopkg.log_err")
+    def test_get_recipe_repo_clone_error(
+        self,
+        mock_log_err,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo when git clone fails."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_abspath.return_value = (
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        mock_exists.return_value = False  # Directory doesn't exist
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.side_effect = autopkg.GitError("fatal: repository not found")
+
+        with patch("autopkg.log") as mock_log:
+            result = autopkg.get_recipe_repo("https://github.com/invalid/repo")
+
+            self.assertIsNone(result)
+            mock_log_err.assert_called_once()
+            mock_log.assert_called()
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    @patch("os.path.isdir")
+    @patch("autopkg.log_err")
+    def test_get_recipe_repo_pull_error(
+        self,
+        mock_log_err,
+        mock_isdir,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo when git pull fails."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_abspath.return_value = (
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes"
+        )
+        mock_exists.return_value = True  # Directory exists
+        mock_isdir.return_value = True  # .git directory exists
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.side_effect = autopkg.GitError("fatal: unable to access")
+
+        with patch("autopkg.log") as mock_log:
+            result = autopkg.get_recipe_repo("https://github.com/autopkg/recipes")
+
+            self.assertIsNone(result)
+            mock_log_err.assert_called_once()
+            mock_log.assert_called()
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    def test_get_recipe_repo_url_parsing(
+        self,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo URL parsing for different URL formats."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_exists.return_value = False
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.return_value = "Cloning..."
+
+        # Test different URL formats and their expected directory names
+        test_cases = [
+            (
+                "https://github.com/autopkg/recipes",
+                "/Users/test/Library/AutoPkg/RecipeRepos/com.github.autopkg.recipes",
+            ),
+            (
+                "https://github.com/user/repo.git",
+                "/Users/test/Library/AutoPkg/RecipeRepos/com.github.user.repo",
+            ),
+            (
+                "ssh://git@github.com/user/repo",
+                "/Users/test/Library/AutoPkg/RecipeRepos/com.github.user.repo",
+            ),
+        ]
+
+        for git_url, expected_path in test_cases:
+            with self.subTest(git_url=git_url):
+                mock_abspath.return_value = expected_path
+                mock_run_git.reset_mock()
+
+                with patch("autopkg.log"):
+                    result = autopkg.get_recipe_repo(git_url)
+
+                self.assertEqual(result, expected_path)
+                mock_run_git.assert_called_once_with(["clone", git_url, expected_path])
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    def test_get_recipe_repo_custom_repo_dir(
+        self,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo with custom RECIPE_REPO_DIR preference."""
+        # Setup mocks with custom repo directory
+        mock_get_pref.return_value = "/custom/repo/dir"
+        mock_expanduser.return_value = "/custom/repo/dir"
+        mock_abspath.return_value = "/custom/repo/dir/com.github.autopkg.recipes"
+        mock_exists.return_value = False
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.return_value = "Cloning..."
+
+        with patch("autopkg.log"):
+            result = autopkg.get_recipe_repo("https://github.com/autopkg/recipes")
+
+            self.assertEqual(result, "/custom/repo/dir/com.github.autopkg.recipes")
+            mock_get_pref.assert_called_once_with("RECIPE_REPO_DIR")
+            mock_expanduser.assert_called_once_with("/custom/repo/dir")
+
+    @patch("autopkg.run_git")
+    @patch("autopkg.git_cmd")
+    @patch("autopkg.get_pref")
+    @patch("os.path.exists")
+    @patch("os.path.expanduser")
+    @patch("os.path.abspath")
+    def test_get_recipe_repo_user_in_url(
+        self,
+        mock_abspath,
+        mock_expanduser,
+        mock_exists,
+        mock_get_pref,
+        mock_git_cmd,
+        mock_run_git,
+    ):
+        """Test get_recipe_repo strips user from URL when parsing domain."""
+        # Setup mocks
+        mock_get_pref.return_value = "~/Library/AutoPkg/RecipeRepos"
+        mock_expanduser.return_value = "/Users/test/Library/AutoPkg/RecipeRepos"
+        mock_abspath.return_value = (
+            "/Users/test/Library/AutoPkg/RecipeRepos/com.github.user.repo"
+        )
+        mock_exists.return_value = False
+        mock_git_cmd.return_value = "/usr/bin/git"
+        mock_run_git.return_value = "Cloning..."
+
+        with patch("autopkg.log"):
+            result = autopkg.get_recipe_repo("https://username@github.com/user/repo")
+
+            # Should still parse domain correctly despite username in URL
+            self.assertEqual(
+                result, "/Users/test/Library/AutoPkg/RecipeRepos/com.github.user.repo"
+            )
+
+    # Tests for get_repo_info function
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_url_found(self, mock_get_pref):
+        """Test get_repo_info with URL that matches a known repo."""
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes": {
+                "URL": "https://github.com/autopkg/recipes",
+                "branch": "main",
+            },
+            "/Users/test/Repos/other": {
+                "URL": "https://github.com/user/other-recipes",
+                "branch": "dev",
+            },
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        result = autopkg.get_repo_info("https://github.com/autopkg/recipes")
+
+        expected = {
+            "path": "/Users/test/Repos/recipes",
+            "URL": "https://github.com/autopkg/recipes",
+            "branch": "main",
+        }
+        self.assertEqual(result, expected)
+
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_url_not_found(self, mock_get_pref):
+        """Test get_repo_info with URL that doesn't match any known repo."""
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes": {
+                "URL": "https://github.com/autopkg/recipes",
+            }
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        result = autopkg.get_repo_info("https://github.com/nonexistent/repo")
+
+        self.assertEqual(result, {})
+
+    @patch("autopkg.get_pref")
+    @patch("os.path.abspath")
+    @patch("os.path.expanduser")
+    def test_get_repo_info_path_found(
+        self, mock_expanduser, mock_abspath, mock_get_pref
+    ):
+        """Test get_repo_info with local path that matches a known repo."""
+        mock_expanduser.return_value = "/Users/test/Repos/recipes"
+        mock_abspath.return_value = "/Users/test/Repos/recipes"
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes": {
+                "URL": "https://github.com/autopkg/recipes",
+                "branch": "main",
+            }
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        result = autopkg.get_repo_info("~/Repos/recipes")
+
+        expected = {
+            "path": "/Users/test/Repos/recipes",
+            "URL": "https://github.com/autopkg/recipes",
+            "branch": "main",
+        }
+        self.assertEqual(result, expected)
+        mock_expanduser.assert_called_once_with("~/Repos/recipes")
+        mock_abspath.assert_called_once_with("/Users/test/Repos/recipes")
+
+    @patch("autopkg.get_pref")
+    @patch("os.path.abspath")
+    @patch("os.path.expanduser")
+    def test_get_repo_info_path_not_found(
+        self, mock_expanduser, mock_abspath, mock_get_pref
+    ):
+        """Test get_repo_info with local path that doesn't match any known repo."""
+        mock_expanduser.return_value = "/Users/test/Repos/unknown"
+        mock_abspath.return_value = "/Users/test/Repos/unknown"
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes": {
+                "URL": "https://github.com/autopkg/recipes",
+            }
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        result = autopkg.get_repo_info("~/Repos/unknown")
+
+        self.assertEqual(result, {})
+
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_empty_recipe_repos(self, mock_get_pref):
+        """Test get_repo_info when no recipe repos are configured."""
+        mock_get_pref.return_value = {}
+
+        result = autopkg.get_repo_info("https://github.com/autopkg/recipes")
+
+        self.assertEqual(result, {})
+
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_none_recipe_repos(self, mock_get_pref):
+        """Test get_repo_info when RECIPE_REPOS preference is None."""
+        mock_get_pref.return_value = None
+
+        result = autopkg.get_repo_info("https://github.com/autopkg/recipes")
+
+        self.assertEqual(result, {})
+
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_url_multiple_repos(self, mock_get_pref):
+        """Test get_repo_info returns first match when URL matches multiple repos."""
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes1": {
+                "URL": "https://github.com/autopkg/recipes",
+                "branch": "main",
+            },
+            "/Users/test/Repos/recipes2": {
+                "URL": "https://github.com/autopkg/recipes",
+                "branch": "dev",
+            },
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        result = autopkg.get_repo_info("https://github.com/autopkg/recipes")
+
+        # Should return first match found
+        self.assertIn("path", result)
+        self.assertEqual(result["URL"], "https://github.com/autopkg/recipes")
+        self.assertIn(
+            result["path"], ["/Users/test/Repos/recipes1", "/Users/test/Repos/recipes2"]
+        )
+
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_repo_without_url(self, mock_get_pref):
+        """Test get_repo_info with repo that has no URL field."""
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes": {
+                "branch": "main",
+                # No URL field
+            }
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        result = autopkg.get_repo_info("https://github.com/autopkg/recipes")
+
+        self.assertEqual(result, {})
+
+    @patch("autopkg.get_pref")
+    def test_get_repo_info_absolute_path_input(self, mock_get_pref):
+        """Test get_repo_info with absolute path input."""
+        mock_recipe_repos = {
+            "/Users/test/Repos/recipes": {
+                "URL": "https://github.com/autopkg/recipes",
+                "branch": "main",
+            }
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        with (
+            patch("os.path.abspath") as mock_abspath,
+            patch("os.path.expanduser") as mock_expanduser,
+        ):
+            mock_expanduser.return_value = "/Users/test/Repos/recipes"
+            mock_abspath.return_value = "/Users/test/Repos/recipes"
+
+            result = autopkg.get_repo_info("/Users/test/Repos/recipes")
+
+            expected = {
+                "path": "/Users/test/Repos/recipes",
+                "URL": "https://github.com/autopkg/recipes",
+                "branch": "main",
+            }
+            self.assertEqual(result, expected)
+
+    # Tests for repo management functions
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.get_recipe_repo")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log")
+    def test_repo_add_success(
+        self,
+        mock_log,
+        mock_save_pref,
+        mock_get_recipe_repo,
+        mock_expand_repo_url,
+        mock_get_pref,
+        mock_get_search_dirs,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_add successfully adding a new repository."""
+        # Setup mocks
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["recipes"])
+        mock_get_search_dirs.return_value = ["/existing/dir"]
+        mock_get_pref.side_effect = lambda key: {
+            "RECIPE_REPOS": {},
+            "RECIPE_SEARCH_DIRS": ["/existing/dir", "/new/repo/dir"],
+        }.get(key, {})
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/recipes"
+        mock_get_recipe_repo.return_value = "/new/repo/dir"
+
+        result = autopkg.repo_add([None, "repo-add", "recipes"])
+
+        self.assertIsNone(result)  # Function doesn't return on success
+        mock_expand_repo_url.assert_called_once_with("recipes")
+        mock_get_recipe_repo.assert_called_once_with(
+            "https://github.com/autopkg/recipes"
+        )
+        mock_save_pref.assert_any_call(
+            "RECIPE_REPOS",
+            {"/new/repo/dir": {"URL": "https://github.com/autopkg/recipes"}},
+        )
+        mock_log.assert_called()
+
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.log_err")
+    def test_repo_add_no_arguments(
+        self,
+        mock_log_err,
+        mock_gen_parser,
+        mock_common_parse,
+        mock_get_search_dirs,
+        mock_get_pref,
+        mock_save_pref,
+    ):
+        """Test repo_add with no repository arguments."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), [])
+        mock_get_search_dirs.return_value = []
+        mock_get_pref.return_value = {}
+
+        result = autopkg.repo_add([None, "repo-add"])
+
+        self.assertEqual(result, -1)
+        mock_log_err.assert_called_once_with("Need at least one recipe repo URL!")
+        # These should not be called since we return early due to no arguments
+        mock_save_pref.assert_not_called()
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.get_recipe_repo")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log")
+    @patch("autopkg.log_err")
+    def test_repo_add_file_uri_error(
+        self,
+        mock_log_err,
+        mock_log,
+        mock_save_pref,
+        mock_get_recipe_repo,
+        mock_expand_repo_url,
+        mock_get_pref,
+        mock_get_search_dirs,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_add rejects file:// URIs."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["file:///local/path"])
+        mock_get_search_dirs.return_value = []
+        mock_get_pref.return_value = {}
+
+        autopkg.repo_add([None, "repo-add", "file:///local/path"])
+
+        mock_log_err.assert_called_with(
+            "AutoPkg does not handle file:// URIs; "
+            "add to your local Recipes folder instead."
+        )
+        mock_get_recipe_repo.assert_not_called()
+        # Verify preferences were saved (even though no repos were added)
+        mock_save_pref.assert_called()
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_repo_info")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log")
+    @patch("autopkg.log_err")
+    @patch("shutil.rmtree")
+    def test_repo_delete_success(
+        self,
+        mock_rmtree,
+        mock_log_err,
+        mock_log,
+        mock_save_pref,
+        mock_expand_repo_url,
+        mock_get_repo_info,
+        mock_get_search_dirs,
+        mock_get_pref,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_delete successfully removing a repository."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["recipes"])
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/recipes"
+        mock_get_repo_info.return_value = {"path": "/repo/path"}
+        mock_get_pref.return_value = {
+            "/repo/path": {"URL": "https://github.com/autopkg/recipes"}
+        }
+        mock_get_search_dirs.return_value = ["/repo/path", "/other/path"]
+
+        result = autopkg.repo_delete([None, "repo-delete", "recipes"])
+
+        self.assertIsNone(result)
+        mock_expand_repo_url.assert_called_once_with("recipes")
+        mock_get_repo_info.assert_called_once_with("https://github.com/autopkg/recipes")
+        mock_rmtree.assert_called_once_with("/repo/path")
+        mock_log.assert_called_with("Removing repo at /repo/path...")
+        mock_save_pref.assert_called()
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.log_err")
+    def test_repo_delete_no_arguments(
+        self, mock_log_err, mock_gen_parser, mock_common_parse
+    ):
+        """Test repo_delete with no repository arguments."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), [])
+
+        result = autopkg.repo_delete([None, "repo-delete"])
+
+        self.assertEqual(result, -1)
+        mock_log_err.assert_called_once_with(
+            "Need at least one recipe repo path or URL!"
+        )
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_repo_info")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log_err")
+    def test_repo_delete_repo_not_found(
+        self,
+        mock_log_err,
+        mock_save_pref,
+        mock_expand_repo_url,
+        mock_get_repo_info,
+        mock_get_search_dirs,
+        mock_get_pref,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_delete when repository is not found."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["nonexistent"])
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/nonexistent"
+        mock_get_repo_info.return_value = {}
+        mock_get_pref.return_value = {}
+        mock_get_search_dirs.return_value = []
+
+        autopkg.repo_delete([None, "repo-delete", "nonexistent"])
+
+        mock_log_err.assert_called_with(
+            "ERROR: Can't find an installed repo for https://github.com/autopkg/nonexistent"
+        )
+        # Verify preferences were still saved even though repo wasn't found
+        mock_save_pref.assert_called()
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_repo_info")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log")
+    @patch("autopkg.log_err")
+    @patch("shutil.rmtree")
+    def test_repo_delete_rmtree_error(
+        self,
+        mock_rmtree,
+        mock_log_err,
+        mock_log,
+        mock_save_pref,
+        mock_expand_repo_url,
+        mock_get_repo_info,
+        mock_get_search_dirs,
+        mock_get_pref,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_delete when shutil.rmtree fails."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["recipes"])
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/recipes"
+        mock_get_repo_info.return_value = {"path": "/repo/path"}
+        mock_get_pref.return_value = {
+            "/repo/path": {"URL": "https://github.com/autopkg/recipes"}
+        }
+        mock_get_search_dirs.return_value = ["/repo/path"]
+        mock_rmtree.side_effect = OSError("Permission denied")
+
+        autopkg.repo_delete([None, "repo-delete", "recipes"])
+
+        # Error message includes additional context about manual cleanup
+        # but must still start with the expected ERROR: prefix.
+        error_call = mock_log_err.call_args
+        assert error_call is not None
+        self.assertIn(
+            "ERROR: Could not remove /repo/path: Permission denied",
+            error_call.args[0],
+        )
+        # Verify preferences were still saved even though rmtree failed
+        mock_save_pref.assert_called()
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("builtins.print")
+    def test_repo_list_with_repos(
+        self, mock_print, mock_get_pref, mock_gen_parser, mock_common_parse
+    ):
+        """Test repo_list with installed repositories."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), [])
+        mock_recipe_repos = {
+            "/path/to/recipes": {"URL": "https://github.com/autopkg/recipes"},
+            "/path/to/other": {"URL": "https://github.com/user/other-recipes"},
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+
+        autopkg.repo_list([None, "repo-list"])
+
+        # Check that print was called for both repos plus empty line
+        self.assertEqual(mock_print.call_count, 3)
+        # Verify that both repos were printed (order might vary but content should be there)
+        all_prints = [str(call) for call in mock_print.call_args_list]
+        self.assertTrue(any("other" in print_call for print_call in all_prints))
+        self.assertTrue(any("recipes" in print_call for print_call in all_prints))
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("builtins.print")
+    def test_repo_list_no_repos(
+        self, mock_print, mock_get_pref, mock_gen_parser, mock_common_parse
+    ):
+        """Test repo_list with no installed repositories."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), [])
+        mock_get_pref.return_value = {}
+
+        autopkg.repo_list([None, "repo-list"])
+
+        mock_print.assert_called_once_with("No recipe repos.")
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.get_repo_info")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.run_git")
+    @patch("autopkg.log")
+    @patch("os.path.abspath")
+    @patch("os.path.expanduser")
+    def test_repo_update_specific_repo(
+        self,
+        mock_expanduser,
+        mock_abspath,
+        mock_log,
+        mock_run_git,
+        mock_expand_repo_url,
+        mock_get_repo_info,
+        mock_get_pref,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_update updating a specific repository."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["recipes"])
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/recipes"
+        mock_get_repo_info.return_value = {"path": "/repo/path"}
+        mock_expanduser.return_value = "/repo/path"
+        mock_abspath.return_value = "/repo/path"
+        # repo_update now calls rev-parse before and after pull so it can
+        # decide whether to rebuild the recipe map. Return stable hashes
+        # that indicate no change so the test asserts behaviour in the
+        # "Already up to date" path.
+        mock_run_git.return_value = "Already up to date."
+
+        autopkg.repo_update([None, "repo-update", "recipes"])
+
+        mock_expand_repo_url.assert_called_once_with("recipes")
+        mock_get_repo_info.assert_called_once_with("https://github.com/autopkg/recipes")
+        mock_run_git.assert_any_call(["pull"], git_directory="/repo/path")
+        mock_log.assert_any_call("Attempting git pull for /repo/path...")
+        mock_log.assert_any_call("Already up to date.")
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.run_git")
+    @patch("autopkg.log")
+    @patch("os.path.abspath")
+    @patch("os.path.expanduser")
+    def test_repo_update_all_repos(
+        self,
+        mock_expanduser,
+        mock_abspath,
+        mock_log,
+        mock_run_git,
+        mock_get_pref,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_update updating all repositories."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["all"])
+        mock_recipe_repos = {
+            "/repo/path1": {"URL": "https://github.com/autopkg/recipes"},
+            "/repo/path2": {"URL": "https://github.com/user/other"},
+        }
+        mock_get_pref.return_value = mock_recipe_repos
+        mock_expanduser.side_effect = lambda x: x
+        mock_abspath.side_effect = lambda x: x
+        mock_run_git.return_value = "Already up to date."
+
+        autopkg.repo_update([None, "repo-update", "all"])
+
+        # repo_update performs up to 3 git operations per repo (rev-parse
+        # before, pull, rev-parse after) so we assert on the pull calls
+        # specifically rather than the total call count.
+        pull_calls = [c for c in mock_run_git.call_args_list if c.args[0] == ["pull"]]
+        self.assertEqual(len(pull_calls), 2)
+        mock_run_git.assert_any_call(["pull"], git_directory="/repo/path1")
+        mock_run_git.assert_any_call(["pull"], git_directory="/repo/path2")
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.log_err")
+    def test_repo_update_no_arguments(
+        self, mock_log_err, mock_gen_parser, mock_common_parse
+    ):
+        """Test repo_update with no repository arguments."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), [])
+
+        result = autopkg.repo_update([None, "repo-update"])
+
+        self.assertEqual(result, -1)
+        mock_log_err.assert_called_once_with(
+            "Need at least one recipe repo path or URL!"
+        )
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_repo_info")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.log_err")
+    def test_repo_update_repo_not_found(
+        self,
+        mock_log_err,
+        mock_expand_repo_url,
+        mock_get_repo_info,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_update when repository is not found."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["nonexistent"])
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/nonexistent"
+        mock_get_repo_info.return_value = {}
+
+        autopkg.repo_update([None, "repo-update", "nonexistent"])
+
+        mock_log_err.assert_called_with(
+            "ERROR: Can't find an installed repo for https://github.com/autopkg/nonexistent"
+        )
+
+    @patch("autopkg.run_git", return_value="abc123\n")
+    def test_head_hash_returns_stripped_revision(self, mock_run_git):
+        self.assertEqual(autopkg._head_hash("/repo/path"), "abc123")
+        mock_run_git.assert_called_once_with(
+            ["rev-parse", "HEAD"], git_directory="/repo/path"
+        )
+
+    @patch("autopkg.run_git", side_effect=autopkg.GitError("not a repository"))
+    def test_head_hash_returns_none_on_git_error(self, mock_run_git):
+        self.assertIsNone(autopkg._head_hash("/repo/path"))
+        mock_run_git.assert_called_once_with(
+            ["rev-parse", "HEAD"], git_directory="/repo/path"
+        )
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_repo_info")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.run_git")
+    @patch("autopkg.log")
+    @patch("autopkg.log_err")
+    @patch("os.path.abspath")
+    @patch("os.path.expanduser")
+    def test_repo_update_git_error(
+        self,
+        mock_expanduser,
+        mock_abspath,
+        mock_log_err,
+        mock_log,
+        mock_run_git,
+        mock_expand_repo_url,
+        mock_get_repo_info,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_update when git pull fails."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["recipes"])
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/recipes"
+        mock_get_repo_info.return_value = {"path": "/repo/path"}
+        mock_expanduser.return_value = "/repo/path"
+        mock_abspath.return_value = "/repo/path"
+        git_error = autopkg.GitError("fatal: unable to access")
+        mock_run_git.side_effect = git_error
+
+        autopkg.repo_update([None, "repo-update", "recipes"])
+
+        mock_log_err.assert_called_with(git_error)
+
+    def test_repo_update_migrates_master_to_main_when_origin_main_replaces_master(
+        self,
+    ):
+        """Test repo_update migrates local master when origin/main replaced it."""
+        mock_run_git, mock_log, _mock_log_err = self._run_repo_update_with_git(
+            ["recipes"],
+            self._stable_repo_update_git(branch="master", origin_main=True),
+        )
+
+        self.assertEqual(
+            [c.args[0] for c in mock_run_git.call_args_list],
+            [
+                ["rev-parse", "--abbrev-ref", "HEAD"],
+                ["fetch", "origin", "--prune"],
+                [
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    "refs/remotes/origin/main",
+                ],
+                [
+                    "show-ref",
+                    "--verify",
+                    "--quiet",
+                    "refs/remotes/origin/master",
+                ],
+                ["branch", "-m", "master", "main"],
+                ["branch", "--set-upstream-to=origin/main", "main"],
+                [
+                    "symbolic-ref",
+                    "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/main",
+                ],
+                ["rev-parse", "HEAD"],
+                ["pull"],
+                ["rev-parse", "HEAD"],
+            ],
+        )
+        self.mock_calculate_recipe_map.assert_called_once()
+        mock_log.assert_any_call(
+            "Repo /repo/path switched its default branch from master to main "
+            "upstream; migrating local clone."
+        )
+
+    def test_repo_update_does_not_migrate_when_origin_master_still_exists(self):
+        """Test local master is left alone when origin/master still exists."""
+        mock_run_git, _mock_log, _mock_log_err = self._run_repo_update_with_git(
+            ["recipes"],
+            self._stable_repo_update_git(
+                branch="master",
+                origin_main=False,
+                origin_master=True,
+            ),
+        )
+
+        git_commands = [c.args[0] for c in mock_run_git.call_args_list]
+        self.assertNotIn(["branch", "-m", "master", "main"], git_commands)
+        self.mock_calculate_recipe_map.assert_not_called()
+
+    def test_repo_update_does_not_migrate_when_origin_master_and_main_exist(self):
+        """Test local master is left alone when the remote state is ambiguous."""
+        mock_run_git, _mock_log, _mock_log_err = self._run_repo_update_with_git(
+            ["recipes"],
+            self._stable_repo_update_git(
+                branch="master",
+                origin_main=True,
+                origin_master=True,
+            ),
+        )
+
+        git_commands = [c.args[0] for c in mock_run_git.call_args_list]
+        self.assertNotIn(["branch", "-m", "master", "main"], git_commands)
+        self.mock_calculate_recipe_map.assert_not_called()
+
+    def test_repo_update_does_not_migrate_when_already_on_main(self):
+        """Test repos already on main do not fetch before the existing pull."""
+        mock_run_git, _mock_log, _mock_log_err = self._run_repo_update_with_git(
+            ["recipes"],
+            self._stable_repo_update_git(branch="main"),
+        )
+
+        git_commands = [c.args[0] for c in mock_run_git.call_args_list]
+        self.assertNotIn(["fetch", "origin", "--prune"], git_commands)
+        self.mock_calculate_recipe_map.assert_not_called()
+
+    def test_repo_update_does_not_migrate_detached_head(self):
+        """Test detached HEAD repos do not enter the master-to-main migration."""
+        mock_run_git, _mock_log, _mock_log_err = self._run_repo_update_with_git(
+            ["recipes"],
+            self._stable_repo_update_git(branch="HEAD"),
+        )
+
+        git_commands = [c.args[0] for c in mock_run_git.call_args_list]
+        self.assertNotIn(["fetch", "origin", "--prune"], git_commands)
+        self.mock_calculate_recipe_map.assert_not_called()
+
+    def test_repo_update_logs_migration_error_and_continues_to_next_repo(self):
+        """Test a failed migration skips that repo and continues updating others."""
+        git_error = autopkg.GitError("rename failed")
+
+        def run_git_side_effect(args, git_directory=None):
+            if git_directory == "/repo/one":
+                return self._stable_repo_update_git(
+                    branch="master",
+                    origin_main=True,
+                    migration_error=git_error,
+                )(args, git_directory)
+            if git_directory == "/repo/two":
+                return self._stable_repo_update_git(branch="main")(
+                    args,
+                    git_directory,
+                )
+            self.fail(f"Unexpected git directory: {git_directory!r}")
+
+        mock_run_git, _mock_log, mock_log_err = self._run_repo_update_with_git(
+            ["all"],
+            run_git_side_effect,
+            recipe_repos={
+                "/repo/one": {"URL": "https://github.com/example/one"},
+                "/repo/two": {"URL": "https://github.com/example/two"},
+            },
+        )
+
+        mock_log_err.assert_called_with(git_error)
+        pull_dirs = [
+            c.kwargs["git_directory"]
+            for c in mock_run_git.call_args_list
+            if c.args[0] == ["pull"]
+        ]
+        self.assertEqual(pull_dirs, ["/repo/two"])
+        self.mock_calculate_recipe_map.assert_not_called()
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.get_recipe_repo")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log")
+    def test_repo_add_existing_repo_in_search_dirs(
+        self,
+        mock_log,
+        mock_save_pref,
+        mock_get_recipe_repo,
+        mock_expand_repo_url,
+        mock_get_pref,
+        mock_get_search_dirs,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_add when repository is already in search directories."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["recipes"])
+        mock_get_search_dirs.return_value = ["/existing/repo/dir"]
+        mock_get_pref.side_effect = lambda key: {
+            "RECIPE_REPOS": {},
+            "RECIPE_SEARCH_DIRS": ["/existing/repo/dir"],
+        }.get(key, {})
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/recipes"
+        mock_get_recipe_repo.return_value = "/existing/repo/dir"
+
+        autopkg.repo_add([None, "repo-add", "recipes"])
+
+        # Should not log about adding to search dirs since it's already there
+        mock_log.assert_any_call("Updated search path:")
+        # But should still add to RECIPE_REPOS
+        mock_save_pref.assert_any_call(
+            "RECIPE_REPOS",
+            {"/existing/repo/dir": {"URL": "https://github.com/autopkg/recipes"}},
+        )
+
+    @patch("autopkg.common_parse")
+    @patch("autopkg.gen_common_parser")
+    @patch("autopkg.get_search_dirs")
+    @patch("autopkg.get_pref")
+    @patch("autopkg.expand_repo_url")
+    @patch("autopkg.get_recipe_repo")
+    @patch("autopkg.save_pref_or_warn")
+    @patch("autopkg.log")
+    def test_repo_add_get_recipe_repo_fails(
+        self,
+        mock_log,
+        mock_save_pref,
+        mock_get_recipe_repo,
+        mock_expand_repo_url,
+        mock_get_pref,
+        mock_get_search_dirs,
+        mock_gen_parser,
+        mock_common_parse,
+    ):
+        """Test repo_add when get_recipe_repo returns None."""
+        mock_parser = Mock()
+        mock_gen_parser.return_value = mock_parser
+        mock_common_parse.return_value = (Mock(), ["invalid-repo"])
+        mock_get_search_dirs.return_value = []
+        mock_get_pref.return_value = {}
+        mock_expand_repo_url.return_value = "https://github.com/autopkg/invalid-repo"
+        mock_get_recipe_repo.return_value = None
+
+        autopkg.repo_add([None, "repo-add", "invalid-repo"])
+
+        # Should still save preferences with empty repos dict
+        mock_save_pref.assert_any_call("RECIPE_REPOS", {})
+        mock_save_pref.assert_any_call("RECIPE_SEARCH_DIRS", [])
+
+    @patch("autopkg.git_cmd")
+    def test_run_git_reports_exec_failure_details(self, mock_git_cmd):
+        """The GitError itself should describe a failure to execute git."""
+        mock_git_cmd.return_value = "/usr/bin/git"
+        exec_error = OSError(13, "Permission denied")
+
+        with patch("subprocess.Popen", side_effect=exec_error):
+            with self.assertRaises(autopkg.GitError) as ctx:
+                autopkg.run_git(["status"])
+
+        self.assertIn("error code 13", str(ctx.exception))
+        self.assertIn("Permission denied", str(ctx.exception))
+        self.assertIs(ctx.exception.__cause__, exec_error)
+
+
+if __name__ == "__main__":
+    unittest.main()

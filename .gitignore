@@ -7,3 +7,13 @@ autopkgc
 
 # IDE-specific files
 .vscode
+autopkg.code-workspace
+
+# Code coverage reports
+.coverage
+coverage.xml
+htmlcov
+
+# Virtual environments
+.venv/
+venv/

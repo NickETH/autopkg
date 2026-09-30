@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for FileMover class"""
 
 from os import rename
@@ -23,19 +24,23 @@ __all__ = ["FileMover"]
 
 
 class FileMover(Processor):
-    """Moves/renames a file.
+    """Moves/renames a file."""
 
-    Requires version 0.2.9."""
-
+    description = __doc__
+    lifecycle = {"introduced": "0.2.9"}
     input_variables = {
-        "source": {"description": "Source file", "required": True},
-        "target": {"description": "Target file", "required": True},
+        "source": {
+            "required": True,
+            "description": "Full path to the file to be moved or renamed.",
+        },
+        "target": {
+            "required": True,
+            "description": "Full path where the file should be moved to.",
+        },
     }
     output_variables = {}
 
-    description = __doc__
-
-    def main(self):
+    def main(self) -> None:
         rename(self.env["source"], self.env["target"])
         self.output(f"File {self.env['source']} moved to {self.env['target']}")
 

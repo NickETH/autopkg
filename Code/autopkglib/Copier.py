@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for Copier class"""
 
 import glob
@@ -29,6 +30,7 @@ class Copier(DmgMounter):
     """Copies source_path to destination_path."""
 
     description = __doc__
+    lifecycle = {"introduced": "0.1.0"}
     input_variables = {
         "source_path": {
             "required": True,
@@ -51,8 +53,6 @@ class Copier(DmgMounter):
     }
     output_variables = {}
 
-    __doc__ = description
-
     def copy(self, source_item, dest_item, overwrite=False):
         """Copies source_item to dest_item, overwriting if allowed"""
         # Remove destination if needed.
@@ -74,13 +74,13 @@ class Copier(DmgMounter):
             else:
                 shutil.copy(source_item, dest_item)
             self.output(f"Copied {source_item} to {dest_item}")
-        except BaseException as err:
+        except Exception as err:
             raise ProcessorError(f"Can't copy {source_item} to {dest_item}: {err}")
 
-    def main(self):
+    def main(self) -> None:
         source_path = self.env["source_path"]
         # Check if we're trying to copy something inside a dmg.
-        (dmg_path, dmg, dmg_source_path) = self.parsePathForDMG(source_path)
+        dmg_path, dmg, dmg_source_path = self.parsePathForDMG(source_path)
         self.output(
             f"Parsed dmg results: dmg_path: {dmg_path}, dmg: {dmg}, "
             f"dmg_source_path: {dmg_source_path}",
@@ -90,9 +90,12 @@ class Copier(DmgMounter):
             if dmg:
                 # Mount dmg and copy path inside.
                 mount_point = self.mount(dmg_path)
-                source_path = os.path.join(mount_point, dmg_source_path)
-            # process path with glob.glob
-            matches = glob.glob(source_path, recursive=True)
+                source_path, matches = self.glob_paths_in_mount(
+                    mount_point, dmg_source_path, recursive=True
+                )
+            else:
+                # process path with glob.glob
+                matches = glob.glob(source_path, recursive=True)
             if len(matches) == 0:
                 raise ProcessorError(
                     f"Error processing path '{source_path}' with glob. "
@@ -118,8 +121,7 @@ class Copier(DmgMounter):
                 overwrite=self.env.get("overwrite"),
             )
         finally:
-            if dmg:
-                self.unmount(dmg_path)
+            self.unmount_if_mounted(dmg_path)
 
 
 if __name__ == "__main__":

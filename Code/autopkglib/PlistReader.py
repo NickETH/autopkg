@@ -15,11 +15,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for PlistReader class"""
 
 import glob
 import os.path
-import plistlib
 
 from autopkglib import ProcessorError
 from autopkglib.DmgMounter import DmgMounter
@@ -33,11 +33,10 @@ class PlistReader(DmgMounter):
     processors that pre-define all their possible output variables.
     As it is often used for versioning, it defaults to extracting
     'CFBundleShortVersionString' to 'version'. This can be used as a replacement
-    for both the AppDmgVersioner and Versioner processors.
-
-    Requires version 0.2.5."""
+    for both the AppDmgVersioner and Versioner processors."""
 
     description = __doc__
+    lifecycle = {"introduced": "0.2.5"}
     input_variables = {
         "info_path": {
             "required": True,
@@ -51,7 +50,6 @@ class PlistReader(DmgMounter):
         },
         "plist_keys": {
             "required": False,
-            "default": {"CFBundleShortVersionString": "version"},
             "description": (
                 "Dictionary of plist values to query. Key names "
                 "should match a top-level key to read. Values "
@@ -59,6 +57,7 @@ class PlistReader(DmgMounter):
                 "Defaults to: ",
                 "{'CFBundleShortVersionString': 'version'}",
             ),
+            "default": {"CFBundleShortVersionString": "version"},
         },
     }
     output_variables = {
@@ -101,11 +100,10 @@ class PlistReader(DmgMounter):
         otherwise None."""
         bundle_info_path = None
         if os.path.isdir(path):
-            test_info_path = os.path.join(path, "Contents/Info.plist")
+            test_info_path = os.path.join(path, "Contents", "Info.plist")
             if os.path.exists(test_info_path):
                 try:
-                    with open(test_info_path, "rb") as f:
-                        plist = plistlib.load(f)
+                    plist = self.load_plist_from_file(test_info_path)
                 except Exception:
                     raise ProcessorError(
                         f"File {path} looks like a bundle, but its "
@@ -115,7 +113,7 @@ class PlistReader(DmgMounter):
                     bundle_info_path = test_info_path
         return bundle_info_path
 
-    def main(self):
+    def main(self) -> None:
         keys = self.env.get("plist_keys")
 
         # Many types of paths are accepted. Figure out which kind we have.
@@ -126,10 +124,10 @@ class PlistReader(DmgMounter):
             # it will always be unmounted.
 
             # Check if we're trying to read something inside a dmg.
-            (dmg_path, dmg, dmg_source_path) = self.parsePathForDMG(path)
+            dmg_path, dmg, dmg_source_path = self.parsePathForDMG(path)
             if dmg:
                 mount_point = self.mount(dmg_path)
-                path = os.path.join(mount_point, dmg_source_path.lstrip("/"))
+                path = self.path_in_mount(mount_point, dmg_source_path)
 
             # Finally check whether this is at least a valid path
             if not os.path.exists(path):
@@ -153,10 +151,9 @@ class PlistReader(DmgMounter):
             # Try to read the plist
             self.output(f"Reading: {path}")
             try:
-                with open(path, "rb") as f:
-                    info = plistlib.load(f)
+                info = self.load_plist_from_file(path)
             except Exception as err:
-                raise ProcessorError(err)
+                raise ProcessorError(str(err)) from err
 
             # Copy each plist_keys' values and assign to new env variables
             self.env["plist_reader_output_variables"] = {}
@@ -175,8 +172,7 @@ class PlistReader(DmgMounter):
                     )
 
         finally:
-            if dmg:
-                self.unmount(dmg_path)
+            self.unmount_if_mounted(dmg_path)
 
 
 if __name__ == "__main__":

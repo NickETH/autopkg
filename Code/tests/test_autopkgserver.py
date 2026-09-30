@@ -1,0 +1,354 @@
+#!/usr/local/autopkg/python
+#
+# Copyright 2025 Elliot Jordan
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import sys
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock
+
+from tests import DaemonHandlerContractTests, DaemonServerContractTests
+
+# Only load the module on Darwin, otherwise create empty module
+if sys.platform == "darwin":
+    # Mock the imports before importing the module
+    sys.modules["packager"] = MagicMock()
+    sys.modules["launch2"] = MagicMock()
+
+    # Load autopkgserver as a module by reading and executing it
+    autopkgserver_path = (
+        Path(__file__).parent.parent / "autopkgserver" / "autopkgserver"
+    )
+    with open(autopkgserver_path, "r", encoding="utf-8") as f:
+        autopkgserver_code = f.read()
+
+    # Create a module
+    autopkgserver = types.ModuleType("autopkgserver")
+    autopkgserver.__file__ = str(autopkgserver_path)
+    sys.modules["autopkgserver"] = autopkgserver
+
+    # Execute the code in the module's namespace
+    exec(autopkgserver_code, autopkgserver.__dict__)
+
+    # Import what we need
+    APPNAME = autopkgserver.APPNAME
+    SOCKET = autopkgserver.SOCKET
+    VERSION = autopkgserver.VERSION
+    AutoPkgServer = autopkgserver.AutoPkgServer
+    AutoPkgServerError = autopkgserver.AutoPkgServerError
+    PkgHandler = autopkgserver.PkgHandler
+    chown_structure = autopkgserver.chown_structure
+    main = autopkgserver.main
+    request_structure = autopkgserver.request_structure
+else:
+    # Create dummy objects for non-Darwin platforms
+    APPNAME = "autopkgserver"
+    SOCKET = "/tmp/autopkgserver"
+    VERSION = "0.0.0"
+    AutoPkgServer = MagicMock
+    AutoPkgServerError = Exception
+    PkgHandler = MagicMock
+    chown_structure = {}
+    main = MagicMock
+    request_structure = {}
+
+
+@unittest.skipUnless(sys.platform == "darwin", "Unix sockets are Unix-only")
+class TestPkgHandler(DaemonHandlerContractTests, unittest.TestCase):
+    """Test class for PkgHandler."""
+
+    daemon_module = "autopkgserver"
+    outer_error_message = b"ERROR:Caught exception: boom"
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.handler = PkgHandler(
+            request=MagicMock(), client_address=("127.0.0.1", 12345), server=MagicMock()
+        )
+        self.handler.log = MagicMock()
+
+    def test_verify_request_syntax_valid_request(self):
+        """Should return True and no errors for valid request."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [],
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertTrue(syntax_ok)
+        self.assertEqual(errors, [])
+
+    def test_verify_request_syntax_missing_required_key(self):
+        """Should return False and error when required key is missing."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            # Missing 'id', 'version', etc.
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertFalse(syntax_ok)
+        self.assertGreater(len(errors), 0)
+        # Check that at least one error mentions a missing key
+        self.assertTrue(any("missing key" in error for error in errors))
+
+    def test_verify_request_syntax_wrong_type(self):
+        """Should return False and error when key has wrong type."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": "not_a_list",  # Should be a list
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertFalse(syntax_ok)
+        self.assertTrue(any("not of type" in error for error in errors))
+
+    def test_verify_request_syntax_invalid_pkgtype(self):
+        """Should return False and error for non-flat package type."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [],
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+
+        for pkgtype in ("bundle", "f", "la", "t"):
+            with self.subTest(pkgtype=pkgtype):
+                syntax_ok, errors = self.handler.verify_request_syntax(
+                    dict(plist, pkgtype=pkgtype)
+                )
+
+                self.assertFalse(syntax_ok)
+                self.assertTrue(
+                    any("pkgtype must be flat" in error for error in errors)
+                )
+
+    def test_verify_request_syntax_invalid_chown_entry(self):
+        """Should return False and error when chown entry is invalid."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": ["not_a_dict"],  # Should be list of dicts
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertFalse(syntax_ok)
+        self.assertTrue(any("chown entry" in error for error in errors))
+
+    def test_verify_request_syntax_valid_chown_entry(self):
+        """Should return True for valid chown entry."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [
+                {
+                    "path": "Applications",
+                    "user": "root",
+                    "group": "wheel",
+                    "mode": "0755",
+                }
+            ],
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertTrue(syntax_ok)
+        self.assertEqual(errors, [])
+
+    def test_verify_request_syntax_chown_missing_key(self):
+        """Should report errors when chown entry is missing required keys."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [
+                {"path": "Applications", "user": "root"}  # Missing group and mode
+            ],
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertTrue(syntax_ok)
+        self.assertTrue(any("chown entry is missing" in error for error in errors))
+
+    def test_verify_request_syntax_chown_with_int_uid_gid(self):
+        """Should accept integer uid/gid in chown entry."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [{"path": "Applications", "user": 0, "group": 0, "mode": "0755"}],
+            "scripts": "",
+            "pkgbuild_args": [],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertTrue(syntax_ok)
+        self.assertEqual(errors, [])
+
+    def test_verify_request_syntax_valid_pkgbuild_args(self):
+        """Should return True for valid pkgbuild_args."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [],
+            "scripts": "",
+            "pkgbuild_args": ["--filter", ".git", "--large-payload"],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertTrue(syntax_ok)
+        self.assertEqual(errors, [])
+
+    def test_verify_request_syntax_invalid_pkgbuild_args_entry(self):
+        """Should return False when pkgbuild_args contains non-string."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [],
+            "scripts": "",
+            "pkgbuild_args": ["--filter", 123],
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertFalse(syntax_ok)
+        self.assertTrue(any("pkgbuild_args" in error for error in errors))
+
+    def test_verify_request_syntax_missing_pkgbuild_args_defaults(self):
+        """Should default pkgbuild_args to empty list when absent."""
+        plist = {
+            "pkgroot": "/tmp/pkgroot",
+            "pkgdir": "/tmp/output",
+            "pkgname": "TestPackage",
+            "pkgtype": "flat",
+            "id": "com.example.test",
+            "version": "1.0.0",
+            "infofile": "",
+            "chown": [],
+            "scripts": "",
+        }
+        syntax_ok, errors = self.handler.verify_request_syntax(plist)
+
+        self.assertTrue(syntax_ok)
+        self.assertEqual(errors, [])
+        self.assertEqual(plist["pkgbuild_args"], [])
+
+    def _make_handler(self, request_bytes=b""):
+        handler = PkgHandler.__new__(PkgHandler)
+        handler.server = types.SimpleNamespace(log=MagicMock())
+        handler.request = MagicMock()
+        handler.request.recv.return_value = request_bytes
+        handler.getpeerid = MagicMock(return_value=(501, (20,)))
+        return handler
+
+
+@unittest.skipUnless(sys.platform == "darwin", "Unix sockets are Unix-only")
+class TestConstants(DaemonServerContractTests, unittest.TestCase):
+    """Socket, logging, main() and constants for the autopkgserver daemon."""
+
+    daemon_module = "autopkgserver"
+    daemon_cls = AutoPkgServer
+    handler_cls = PkgHandler
+    daemon_error_cls = AutoPkgServerError
+    appname = APPNAME
+    version = VERSION
+    main_func = staticmethod(main)
+
+    def test_socket_constant(self):
+        """SOCKET should be set correctly."""
+        self.assertEqual(SOCKET, "/var/run/autopkgserver")
+
+    def test_request_structure_has_required_keys(self):
+        """request_structure should contain all required keys."""
+        required_keys = [
+            "pkgroot",
+            "pkgdir",
+            "pkgname",
+            "pkgtype",
+            "id",
+            "version",
+            "infofile",
+            "chown",
+            "scripts",
+        ]
+        for key in required_keys:
+            self.assertIn(key, request_structure)
+
+    def test_chown_structure_has_required_keys(self):
+        """chown_structure should contain all required keys."""
+        required_keys = ["path", "user", "group", "mode"]
+        for key in required_keys:
+            self.assertIn(key, chown_structure)
+
+
+if __name__ == "__main__":
+    unittest.main()

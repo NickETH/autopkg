@@ -13,13 +13,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-#
+
 # Utility script to handle duplicating existing repos to an organization,
 # and creating a team with access to the new repo.
 """Utility to duplicate an AutoPkg recipe repo on GitHub to an organization and
 create a new team specifically for the duplicate repo, and assign the source
 repo author to this team."""
-
 
 import json
 import optparse
@@ -34,20 +33,6 @@ from tempfile import mkdtemp
 
 BASE_URL = "https://api.github.com"
 TOKEN = None
-
-
-class RequestWithMethod(urllib.request.Request):
-    """Custom Request class that can accept arbitrary methods besides
-    GET/POST"""
-
-    # http://benjamin.smedbergs.us/blog/2008-10-21/
-    #        putting-and-deleteing-in-python-urllib2/
-    def __init__(self, method, *args, **kwargs):
-        self._method = method
-        urllib.request.Request.__init__(self, *args, **kwargs)
-
-    def get_method(self):
-        return self._method
 
 
 def call_api(
@@ -76,8 +61,8 @@ def call_api(
     if data:
         data = json.dumps(data).encode()
 
-    # Setup custom request and its headers
-    req = RequestWithMethod(method, url)
+    # Setup request and its headers
+    req = urllib.request.Request(url, method=method)
     req.add_header("User-Agent", "AutoPkg")
     req.add_header("Accept", accept)
     req.add_header("Authorization", f"token {TOKEN}")
@@ -95,12 +80,14 @@ def call_api(
     except urllib.error.HTTPError as err:
         status = err.code
         print(f"API error: {err}", file=sys.stderr)
+        # Read the body once; a second err.read() would return b"".
+        error_body = err.read()
         try:
-            error_json = json.loads(err.read())
+            error_json = json.loads(error_body)
             print("Server response:", file=sys.stderr)
             pprint(error_json, stream=sys.stderr)
-        except BaseException:
-            print(err.read(), file=sys.stderr)
+        except Exception:
+            print(error_body, file=sys.stderr)
     return (resp_data, status)
 
 
@@ -111,7 +98,9 @@ def clone_repo(url, bare=True):
     if bare:
         cmd.append("--bare")
     cmd.extend([url, clonedir])
-    subprocess.call(cmd)
+    result = subprocess.call(cmd)
+    if result != 0:
+        sys.exit(f"Error cloning {url}, git exited with status {result}.")
     return clonedir
 
 
@@ -125,7 +114,7 @@ def main():
         "\n\n %prog [options] source-repo-user/recipe-repo-name"
     )
     default_org = "autopkg"
-    permisison_levels = ["pull", "push", "admin"]
+    permission_levels = ["pull", "push", "admin"]
     default_permission_level = "push"
     parser = optparse.OptionParser(usage=usage)
     parser.add_option("-t", "--token", help="Auth token string to use. Required.")
@@ -150,7 +139,7 @@ def main():
         default=default_permission_level,
         help=(
             "Permission level to use for new team. Must be one "
-            f"of: {', '.join(permisison_levels)}. Defaults to "
+            f"of: {', '.join(permission_levels)}. Defaults to "
             f"{default_permission_level}."
         ),
     )
@@ -168,12 +157,11 @@ def main():
 
     if len(args) == 0:
         sys.exit(
-            "You must provide a repo in the form of 'user/repo' as the "
-            "only argument!"
+            "You must provide a repo in the form of 'user/repo' as the only argument!"
         )
-    if opts.permission_level not in permisison_levels:
+    if opts.permission_level not in permission_levels:
         sys.exit(
-            f"Permission level option must be one of: {', '.join(permisison_levels)}."
+            f"Permission level option must be one of: {', '.join(permission_levels)}."
         )
     if not opts.token:
         sys.exit(
@@ -189,7 +177,7 @@ def main():
     print(f"Using source repo: user {source_repo_user}, repo {source_repo_name}")
     destination_repo_name = opts.destination_repo_name or source_repo_user + "-recipes"
     dest_org = opts.destination_org
-    print(f"Will clone to {dest_org}/{destination_repo_name}..")
+    print(f"Will clone to {dest_org}/{destination_repo_name}...")
     global TOKEN
     TOKEN = opts.token
 
@@ -221,7 +209,7 @@ def main():
 
     # Get the existing repos of the destination user or org
     dest_repos = []
-    print(f"Fetching {dest_org}'s public repos..")
+    print(f"Fetching {dest_org}'s public repos...")
     dest_repos_result, code = call_api(f"/users/{dest_org}/repos")
     if dest_repos_result:
         dest_repos = [r["name"] for r in dest_repos_result]
@@ -257,7 +245,7 @@ Type 'yes' to proceed: """
     _, code = call_api(f"/orgs/{dest_org}/repos", method="POST", data=new_repo_data)
 
     # Create new team in the org for use with this repo
-    print(f"Creating new team: {new_team_name}..")
+    print(f"Creating new team: {new_team_name}...")
     new_team_data = {
         "name": new_team_name,
         "permission": opts.permission_level,
@@ -275,14 +263,13 @@ Type 'yes' to proceed: """
     _, code = call_api(remove_member_endpoint, method="DELETE")
     if code != 204:
         print(
-            "Warning: Unexpected HTTP result on removing "
-            f"{auth_user} from new team.",
+            f"WARNING: Unexpected HTTP result on removing {auth_user} from new team.",
             file=sys.stderr,
         )
 
     # Add the user to the new team
     # https://developer.github.com/v3/orgs/teams/#add-team-membership
-    print(f"Adding {new_team_member} to new team..")
+    print(f"Adding {new_team_member} to new team...")
     user_add_team_endpoint = "/teams/{}/memberships/{}".format(
         new_team["id"], new_team_member
     )
@@ -303,14 +290,10 @@ Type 'yes' to proceed: """
     # https://help.github.com/articles/duplicating-a-repository
     repodir = clone_repo(f"ssh://git@github.com/{source_repo_user}/{source_repo_name}")
     os.chdir(repodir)
-    subprocess.call(
-        [
-            "git",
-            "push",
-            "--mirror",
-            f"ssh://git@github.com/{dest_org}/{destination_repo_name}",
-        ]
-    )
+    push_dest = f"ssh://git@github.com/{dest_org}/{destination_repo_name}"
+    result = subprocess.call(["git", "push", "--mirror", push_dest])
+    if result != 0:
+        sys.exit(f"Error pushing to {push_dest}, git exited with status {result}.")
 
 
 if __name__ == "__main__":

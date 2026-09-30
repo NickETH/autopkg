@@ -13,17 +13,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for DmgCreator class"""
 
 import os
 import subprocess
 
-from autopkglib import Processor, ProcessorError
+from autopkglib import Processor, ProcessorError, is_mac
 
 __all__ = ["DmgCreator"]
 
-DEFAULT_DMG_FORMAT = "UDZO"
-DEFAULT_DMG_FILESYSTEM = "HFS+"
+DEFAULT_DMG_FORMAT = "ULFO"
+DEFAULT_DMG_FILESYSTEM = "APFS"
 DEFAULT_ZLIB_LEVEL = 5
 
 
@@ -31,6 +32,7 @@ class DmgCreator(Processor):
     """Creates a disk image from a directory."""
 
     description = __doc__
+    lifecycle = {"introduced": "0.1.0"}
     input_variables = {
         "dmg_root": {
             "required": True,
@@ -40,12 +42,15 @@ class DmgCreator(Processor):
         "dmg_format": {
             "required": False,
             "description": (f"The dmg format. Defaults to {DEFAULT_DMG_FORMAT}."),
+            "default": DEFAULT_DMG_FORMAT,
         },
         "dmg_filesystem": {
             "required": False,
             "description": (
-                f"The dmg filesystem. Defaults to {DEFAULT_DMG_FILESYSTEM}."
+                f"The dmg filesystem. Defaults to {DEFAULT_DMG_FILESYSTEM}. "
+                "Note: APFS requires macOS 10.13 or later to mount."
             ),
+            "default": DEFAULT_DMG_FILESYSTEM,
         },
         "dmg_zlib_level": {
             "required": False,
@@ -55,6 +60,7 @@ class DmgCreator(Processor):
                 "beyond which very little space savings is "
                 "gained."
             ),
+            "default": DEFAULT_ZLIB_LEVEL,
         },
         "dmg_megabytes": {
             "required": False,
@@ -70,7 +76,13 @@ class DmgCreator(Processor):
     }
     output_variables = {}
 
-    def main(self):
+    def main(self) -> None:
+        if not is_mac():
+            raise ProcessorError(
+                "DMG creation is only supported on macOS. "
+                "The 'hdiutil' utility is not available on this platform."
+            )
+
         # Remove existing dmg if it exists.
         if os.path.exists(self.env["dmg_path"]):
             os.unlink(self.env["dmg_path"])
@@ -89,6 +101,8 @@ class DmgCreator(Processor):
             "UDxx",
             "UDSP",
             "UDSB",
+            "ULFO",
+            "ULMO",
         ]
 
         dmg_format = self.env.get("dmg_format", DEFAULT_DMG_FORMAT)
@@ -146,7 +160,7 @@ class DmgCreator(Processor):
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
             )
-            (_, stderr) = proc.communicate()
+            _, stderr = proc.communicate()
         except OSError as err:
             raise ProcessorError(
                 f"hdiutil execution failed with error code {err.errno}: {err.strerror}"

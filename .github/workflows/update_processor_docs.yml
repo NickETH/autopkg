@@ -1,0 +1,39 @@
+name: Update processor docs
+
+on:
+  push:
+    tags: # Final version tags only (e.g. v3.0.0); excludes prereleases (RC, alpha, beta)
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+      - '!v*[A-Za-z]*'
+
+jobs:
+  build:
+    if: github.repository_owner == 'autopkg'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone this repository
+        uses: actions/checkout@v5
+        with:
+          path: main
+
+      - name: Clone wiki
+        uses: actions/checkout@v5
+        with:
+          repository: autopkg/autopkg.wiki
+          path: wiki
+
+      - name: Install Python requirements
+        working-directory: main
+        run: python3 -m pip install -r .github/workflows/requirements.txt
+        continue-on-error: true
+
+      - name: Configure Git
+        working-directory: main
+        run: |
+          git config --global user.name github-actions
+          git config --global user.email github-actions@github.com
+
+      - name: Update processor docs
+        working-directory: main/Scripts
+        run: python3 generate_processor_docs.py -d ../../wiki -y "${GITHUB_REF##*/}"

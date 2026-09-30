@@ -14,10 +14,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for URLGetter class"""
 
 import os.path
 import subprocess
+from typing import NoReturn
 
 from autopkglib import Processor, ProcessorError, find_binary, is_windows
 
@@ -34,7 +36,7 @@ class URLGetter(Processor):
         if not self.env:
             self.env = {}
 
-    def curl_binary(self):
+    def curl_binary(self) -> str:
         """Return a path to a curl binary, priority in the order below.
         Return None if none found.
         1. env['CURL_PATH']
@@ -49,42 +51,34 @@ class URLGetter(Processor):
 
         raise ProcessorError("Unable to locate or execute any curl binary")
 
-    def prepare_curl_cmd(self):
+    def prepare_curl_cmd(self) -> list[str]:
         """Assemble basic curl command and return it."""
         if is_windows() and "windows\\system32" in self.curl_binary().lower():
             # if using windows default curl, --compressed is not supported
             return [self.curl_binary(), "--location"]
         return [self.curl_binary(), "--compressed", "--location"]
 
-    def add_curl_headers(self, curl_cmd, headers):
+    def add_curl_headers(self, curl_cmd, headers) -> None:
         """Add headers to curl_cmd."""
         if headers:
             for header, value in headers.items():
                 curl_cmd.extend(["--header", f"{header}: {value}"])
 
-    def add_curl_common_opts(self, curl_cmd):
+    def add_curl_common_opts(self, curl_cmd) -> None:
         """Add request_headers and curl_opts to curl_cmd."""
         self.add_curl_headers(curl_cmd, self.env.get("request_headers"))
 
         for item in self.env.get("curl_opts", []):
             curl_cmd.extend([item])
 
-    def produce_etag_headers(self, filename):
-        """Produce a dict of curl headers containing etag headers from the download."""
-        headers = {}
-        # If the download file already exists, add some headers to the request
-        # so we don't retrieve the content if it hasn't changed
-        if os.path.exists(filename):
-            self.existing_file_size = os.path.getsize(filename)
-            etag = self.getxattr(self.xattr_etag)
-            last_modified = self.getxattr(self.xattr_last_modified)
-            if etag:
-                headers["If-None-Match"] = etag
-            if last_modified:
-                headers["If-Modified-Since"] = last_modified
-        return headers
+    def produce_etag_headers(self) -> NoReturn:
+        """Removed — now lives on URLDownloader."""
+        raise ProcessorError(
+            "produce_etag_headers() has moved to URLDownloader. "
+            "Subclasses of URLGetter that need this method should subclass URLDownloader instead."
+        )
 
-    def clear_header(self, header):
+    def clear_header(self, header) -> None:
         """Clear header dictionary."""
         # Save redirect URL before clear
         http_redirected = header.get("http_redirected", None)
@@ -94,7 +88,7 @@ class URLGetter(Processor):
         # Restore redirect URL
         header["http_redirected"] = http_redirected
 
-    def parse_http_protocol(self, line, header):
+    def parse_http_protocol(self, line, header) -> None:
         """Parse first HTTP header line."""
         try:
             header["http_result_code"] = line.split(None, 2)[1]
@@ -102,7 +96,7 @@ class URLGetter(Processor):
         except IndexError:
             pass
 
-    def parse_http_header(self, line, header):
+    def parse_http_header(self, line, header) -> None:
         """Parse single HTTP header line."""
         part = line.split(None, 1)
         fieldname = part[0].rstrip(":").lower()
@@ -111,7 +105,7 @@ class URLGetter(Processor):
         except IndexError:
             header[fieldname] = ""
 
-    def parse_curl_error(self, proc_stderr):
+    def parse_curl_error(self, proc_stderr) -> str:
         """Report curl failure."""
         curl_err = ""
         try:
@@ -122,7 +116,15 @@ class URLGetter(Processor):
 
         return curl_err
 
-    def parse_ftp_header(self, line, header):
+    def _curl_stderr_text(self, proc_stderr) -> str:
+        """Return curl stderr as text for error reporting."""
+        if isinstance(proc_stderr, bytes):
+            return proc_stderr.decode("utf-8", errors="replace")
+        if proc_stderr is None:
+            return "curl failed without diagnostic output"
+        return str(proc_stderr)
+
+    def parse_ftp_header(self, line, header) -> None:
         """Parse single FTP header line."""
         part = line.split(None, 1)
         responsecode = part[0]
@@ -140,9 +142,9 @@ class URLGetter(Processor):
             header["http_result_code"] = "200"
             header["http_result_description"] = line
 
-    def parse_headers(self, raw_headers):
+    def parse_headers(self, raw_headers: str) -> dict[str, str | None]:
         """Parse headers from curl."""
-        header = {}
+        header: dict[str, str | None] = {}
         self.clear_header(header)
         for line in raw_headers.splitlines():
             if line.startswith("HTTP/"):
@@ -166,34 +168,33 @@ class URLGetter(Processor):
                     self.clear_header(header)
         return header
 
-    def execute_curl(self, curl_cmd, text=True):
+    def execute_curl(self, curl_cmd, text=True) -> tuple[str, str, int]:
         """Execute curl command. Return stdout, stderr and return code."""
         errors = "ignore" if text else None
         try:
             result = subprocess.run(
                 curl_cmd,
                 shell=False,
-                bufsize=1,
                 capture_output=True,
                 check=True,
                 text=text,
                 errors=errors,
             )
         except subprocess.CalledProcessError as e:
-            self.output(f"ERROR: {e.stderr.removeprefix('curl: ')}")
-            raise ProcessorError(e.stderr) from e
+            stderr = self._curl_stderr_text(e.stderr)
+            self.output(f"ERROR: {stderr.removeprefix('curl: ')}")
+            raise ProcessorError(stderr) from e
         return result.stdout, result.stderr, result.returncode
 
-    def download_with_curl(self, curl_cmd, text=True):
+    def download_with_curl(self, curl_cmd, text=True) -> str:
         """Launch curl, return its output, and handle failures."""
-        proc_stdout, proc_stderr, retcode = self.execute_curl(curl_cmd, text)
+        # execute_curl runs curl with check=True, so a nonzero exit already
+        # raises ProcessorError there and never reaches us.
+        proc_stdout, _, _ = self.execute_curl(curl_cmd, text)
         self.output(f"Curl command: {curl_cmd}", verbose_level=4)
-        if retcode:  # Non-zero exit code from curl => problem with download
-            curl_err = self.parse_curl_error(proc_stderr)
-            raise ProcessorError(f"curl failure: {curl_err} (exit code {retcode})")
         return proc_stdout
 
-    def download(self, url, headers=None, text=False):
+    def download(self, url, headers=None, text=False) -> str:
         """Download content with default curl options."""
         curl_cmd = self.prepare_curl_cmd()
         self.add_curl_headers(curl_cmd, headers)
@@ -201,7 +202,7 @@ class URLGetter(Processor):
         output = self.download_with_curl(curl_cmd, text)
         return output
 
-    def download_to_file(self, url, filename, headers=None):
+    def download_to_file(self, url, filename, headers=None) -> str:
         """Download content to a file with default curl options."""
         curl_cmd = self.prepare_curl_cmd()
         self.add_curl_headers(curl_cmd, headers)
@@ -212,7 +213,7 @@ class URLGetter(Processor):
             return filename
         raise ProcessorError(f"{filename} was not written!")
 
-    def main(self):
+    def main(self) -> None:
         pass
 
 

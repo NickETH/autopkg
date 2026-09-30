@@ -13,8 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""See docstring for FileFinder class"""
 
+"""See docstring for FileFinder class"""
 
 import os.path
 from glob import glob
@@ -29,22 +29,22 @@ class FileFinder(DmgMounter):
     """Finds a filename for use in other Processors.
 
     Currently only supports glob filename patterns.
-
-    Requires version 0.2.3.
     """
 
+    description = __doc__
+    lifecycle = {"introduced": "0.2.3"}
     input_variables = {
         "pattern": {
-            "description": "Shell glob pattern to match files by",
             "required": True,
+            "description": "Shell glob pattern to match files by",
         },
         "find_method": {
+            "required": False,
             "description": (
                 "Type of pattern to match. Currently only "
                 'supported type is "glob" (also the default)'
             ),
             "default": "glob",
-            "required": False,
         },
     }
     output_variables = {
@@ -52,8 +52,6 @@ class FileFinder(DmgMounter):
         "dmg_found_filename": {"description": "DMG-relative path of found filename"},
         "found_basename": {"description": "Basename of found filename"},
     }
-
-    description = __doc__
 
     def globfind(self, pattern):
         """If multiple files are found the last alphanumerically sorted found
@@ -68,7 +66,7 @@ class FileFinder(DmgMounter):
 
         return glob_matches[-1]
 
-    def main(self):
+    def main(self) -> None:
         pattern = self.env.get("pattern")
 
         method = self.env.get("find_method")
@@ -79,14 +77,21 @@ class FileFinder(DmgMounter):
         source_path = pattern
 
         # Check if we're trying to copy something inside a dmg.
-        (dmg_path, dmg, dmg_source_path) = self.parsePathForDMG(source_path)
+        dmg_path, dmg, dmg_source_path = self.parsePathForDMG(source_path)
         try:
             if dmg:
                 # Mount dmg and copy path inside.
                 mount_point = self.mount(dmg_path)
-                source_path = os.path.join(mount_point, dmg_source_path)
-            # process path with globbing
-            match = self.globfind(source_path)
+                source_path, matches = self.glob_paths_in_mount(
+                    mount_point, dmg_source_path, recursive=True
+                )
+                if len(matches) < 1:
+                    raise ProcessorError("No matching filename found")
+                matches.sort()
+                match = matches[-1]
+            else:
+                # process path with globbing
+                match = self.globfind(source_path)
             self.env["found_filename"] = match
             self.output(
                 f"Found file match: '{self.env['found_filename']}' from globbed '{source_path}'"
@@ -105,8 +110,7 @@ class FileFinder(DmgMounter):
             self.output(f"Basename match: '{self.env['found_basename']}'")
 
         finally:
-            if dmg:
-                self.unmount(dmg_path)
+            self.unmount_if_mounted(dmg_path)
 
 
 if __name__ == "__main__":

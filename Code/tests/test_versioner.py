@@ -1,5 +1,7 @@
 #!/usr/local/autopkg/python
 #
+# Copyright 2019 Michal Moravec
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,7 +22,7 @@ import zipfile
 from copy import deepcopy
 from io import BytesIO
 from tempfile import TemporaryDirectory
-from typing import Any, Dict
+from typing import Any
 from unittest import mock
 from unittest.mock import patch
 
@@ -51,18 +53,14 @@ TEST_VERSION_PLIST: bytes = f"""<?xml version="1.0" encoding="UTF-8"?>
     <key>{TEST_VERSION_CUSTOM_KEY}</key>
     <string>{TEST_VERSION_CUSTOM}</string>
 </dict>
-</plist>""".encode(
-    "utf-8"
-)
+</plist>""".encode()
 
-TEST_NO_VERSION_PLIST: bytes = """<?xml version="1.0" encoding="UTF-8"?>
+TEST_NO_VERSION_PLIST: bytes = b"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 </dict>
-</plist>""".encode(
-    "utf-8"
-)
+</plist>"""
 
 
 class TestVersioner(unittest.TestCase):
@@ -70,15 +68,15 @@ class TestVersioner(unittest.TestCase):
 
     def setUp(self):
         self.maxDiff: int = 100000
-        self.tempdir = TemporaryDirectory()
-        self.good_env: Dict[str, Any] = {
+        self.tmp_dir = TemporaryDirectory()
+        self.good_env: dict[str, Any] = {
             "input_plist_path": "dummy_path",
             "plist_version_key": TEST_VERSION_DEFAULT_KEY,
-            "RECIPE_CACHE_DIR": self.tempdir.name,
+            "RECIPE_CACHE_DIR": self.tmp_dir.name,
         }
-        self.bad_env: Dict[str, Any] = {}
+        self.bad_env: dict[str, Any] = {}
         self.processor = Versioner(data=deepcopy(self.good_env))
-        self.addCleanup(self.tempdir.cleanup)
+        self.addCleanup(self.tmp_dir.cleanup)
 
     def tearDown(self):
         pass
@@ -87,9 +85,9 @@ class TestVersioner(unittest.TestCase):
         """Returns a path into the per testcase temporary directory.
         On POSIX-y platforms the paths are sensible. On Windows they will non-standard
         because they will use the format `C:/path/to/tmpdir/file.txt` instead of the
-        conventional `C:\\path\\....`. This is due to the interaction of code written
+        conventional `C:\\path\\...`. This is due to the interaction of code written
         only for macOS and code written to be cross-platform."""
-        return posixpath.normpath(os.path.join(self.tempdir.name, *parts))
+        return posixpath.normpath(os.path.join(self.tmp_dir.name, *parts))
 
     def _run_direct_plist(
         self, plist: bytes, mock_dmg: mock.Mock, mock_plist: mock.Mock
@@ -100,29 +98,23 @@ class TestVersioner(unittest.TestCase):
         with patch("os.path.exists", return_value=True):
             self.processor.process()
 
-    @patch("autopkglib.Versioner.load_plist_from_file")
-    @patch("autopkglib.Versioner.parsePathForDMG")
-    def test_no_fail_if_good_env(self, mock_dmg, mock_plist):
-        """The processor should not raise any exceptions if run normally."""
-        self._run_direct_plist(TEST_VERSION_PLIST, mock_dmg, mock_plist)
-
-    @patch("autopkglib.Versioner.load_plist_from_file")
-    @patch("autopkglib.Versioner.parsePathForDMG")
+    @patch.object(Versioner, "load_plist_from_file")
+    @patch.object(Versioner, "parsePathForDMG")
     def test_find_cfbundle_short_version(self, mock_dmg, mock_plist):
         """The processor should find version in default `CFBundleShortVersionString`."""
         self._run_direct_plist(TEST_VERSION_PLIST, mock_dmg, mock_plist)
         self.assertEqual(self.processor.env["version"], TEST_VERSION_DEFAULT)
 
-    @patch("autopkglib.Versioner.load_plist_from_file")
-    @patch("autopkglib.Versioner.parsePathForDMG")
+    @patch.object(Versioner, "load_plist_from_file")
+    @patch.object(Versioner, "parsePathForDMG")
     def test_find_custom_version(self, mock_dmg, mock_plist):
         """The processor should find version under key specified by `plist_version_key`."""
         self.processor.env["plist_version_key"] = TEST_VERSION_CUSTOM_KEY
         self._run_direct_plist(TEST_VERSION_PLIST, mock_dmg, mock_plist)
         self.assertEqual(self.processor.env["version"], TEST_VERSION_CUSTOM)
 
-    @patch("autopkglib.Versioner.load_plist_from_file")
-    @patch("autopkglib.Versioner.parsePathForDMG")
+    @patch.object(Versioner, "load_plist_from_file")
+    @patch.object(Versioner, "parsePathForDMG")
     def test_no_version_found(self, mock_dmg, mock_plist):
         """The processor should not find version if plist misses it."""
         self._run_direct_plist(TEST_NO_VERSION_PLIST, mock_dmg, mock_plist)
@@ -134,7 +126,6 @@ class TestVersioner(unittest.TestCase):
     def test_read_auto_detect(self, mock_dmg, mock_zip, mock_exists):
         """File type auto detection"""
         mock_deserializer = mock.MagicMock()
-
         zip_inner_path = self._mkpath("archive.zip", "dummy", "file.txt")
         dmg_inner_path = self._mkpath("image.dmg", "dummy", "file2.txt")
         real_path = self._mkpath("regular", "dummy", "file3.txt")
@@ -151,10 +142,34 @@ class TestVersioner(unittest.TestCase):
                 )
         mock_deserializer.assert_called_once_with(real_path)
         mock_exists.assert_called_once_with(real_path)
-        mock_zip.assert_called_once_with(
-            zip_inner_path, False, mock_deserializer, self.processor.ZIP_EXTENSIONS
-        )
+        mock_zip.assert_called_once_with(zip_inner_path, False, mock_deserializer)
         mock_dmg.assert_called_once_with(dmg_inner_path, mock_deserializer)
+
+    @patch("os.path.exists", return_value=True)
+    @patch.object(Versioner, "_read_from_zip", return_value={})
+    @patch.object(Versioner, "_read_from_dmg", return_value={})
+    def test_read_auto_detect_default_deserializer(
+        self, mock_dmg, mock_zip, mock_exists
+    ):
+        """When no deserializer is supplied, the default plist loader is used."""
+        zip_inner_path = self._mkpath("archive.zip", "dummy", "file.txt")
+        dmg_inner_path = self._mkpath("image.dmg", "dummy", "file2.txt")
+        real_path = self._mkpath("regular", "dummy", "file3.txt")
+        with patch.object(Versioner, "load_plist_from_file") as mock_load:
+            for path in (
+                real_path,
+                zip_inner_path,
+                dmg_inner_path,
+            ):
+                with self.subTest(path=path):
+                    self.processor._read_auto_detect(
+                        path=path,
+                        skip_single_root_dir=False,
+                    )
+        mock_load.assert_called_once_with(real_path)
+        mock_exists.assert_called_once_with(real_path)
+        mock_zip.assert_called_once_with(zip_inner_path, False, mock_load)
+        mock_dmg.assert_called_once_with(dmg_inner_path, mock_load)
 
     def test_version_from_image(self):
         """Inner image-like (DMG/ISO) paths work"""
@@ -163,7 +178,7 @@ class TestVersioner(unittest.TestCase):
         @patch.object(Versioner, "_read_from_zip")
         @patch.object(Versioner, "unmount")
         @patch.object(Versioner, "mount")
-        # @patch("autopkglib.Versioner.load_plist_from_file")
+        # @patch.object(Versioner, "load_plist_from_file")
         @patch_open(TEST_VERSION_PLIST)
         def test_for_extension(
             ext: str, mock_plist, mock_mount, mock_unmount, mock_zip, mock_exists
@@ -171,17 +186,26 @@ class TestVersioner(unittest.TestCase):
             mount_path: str = self._mkpath("dmg_mount")
             plist_path: str = self._mkpath(f"fake{ext}/dir/version.plist")
             dmg_path: str = self._mkpath(f"fake{ext}")
-            mock_mount.return_value = mount_path
+
+            def mount_image(path):
+                self.processor.mounts[path] = mount_path
+                return mount_path
+
+            def unmount_image(path):
+                del self.processor.mounts[path]
+
+            mock_mount.side_effect = mount_image
+            mock_unmount.side_effect = unmount_image
             self.processor.env["input_plist_path"] = plist_path
-            result: Dict[str, Any] = self.processor.process()
+            result: dict[str, Any] = self.processor.process()
             mock_zip.assert_not_called()
             mock_exists.assert_called_once_with(
-                os.path.normpath(os.path.join(mount_path, "dir/version.plist"))
+                os.path.normpath(os.path.join(mount_path, "dir", "version.plist"))
             )
             mock_mount.assert_called_once_with(dmg_path)
             mock_unmount.assert_called_once_with(dmg_path)
             mock_plist.assert_called_once_with(
-                os.path.normpath(os.path.join(mount_path, "dir/version.plist")), "rb"
+                os.path.normpath(os.path.join(mount_path, "dir", "version.plist")), "rb"
             )
             self.assertIn("version", result)
             self.assertEqual(TEST_VERSION_DEFAULT, result["version"])
@@ -191,7 +215,7 @@ class TestVersioner(unittest.TestCase):
                 test_for_extension(ext_case)
 
     @patch("os.path.exists", return_value=False)
-    @patch("autopkglib.Versioner._read_from_dmg")
+    @patch.object(Versioner, "_read_from_dmg")
     def test_version_from_zip(self, mock_dmg, mock_exists):
         multi_subdir = list(
             map(
@@ -262,7 +286,7 @@ class TestVersioner(unittest.TestCase):
             zi.file_size = 0
             zi.compress_size = 0
         mock_zinst.open.return_value.read.return_value = TEST_VERSION_PLIST
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         with self.assertRaisesRegex(
             ProcessorError, r".*rchive.*has more than one.*at root"
         ):
@@ -274,17 +298,49 @@ class TestVersioner(unittest.TestCase):
         mock_dmg.assert_not_called()
         self.assertNotIn("version", result)
 
+    def test_mount_failure_preserves_original_error(self):
+        """mount() failure must not be masked by a subsequent unmount error."""
+        dmg_path = self._mkpath("image.dmg", "dir", "version.plist")
+        self.processor.env["input_plist_path"] = dmg_path
+        mount_error = ProcessorError("hdiutil failed: corrupt image")
+        with patch.object(self.processor, "mount", side_effect=mount_error):
+            with patch.object(self.processor, "unmount") as mock_unmount:
+                with self.assertRaises(ProcessorError) as ctx:
+                    self.processor.process()
+        mock_unmount.assert_not_called()
+        self.assertIs(ctx.exception, mount_error)
+
     def test_path_missing_raises(self):
         """Raises ProcessorError when the provided path does not exist."""
-        for path in self._mkpath(
-            "not_real_version.plist", "archive.zip/nope.txt", "image.dmg/darn.json"
-        ):
+        zip_path = self._mkpath("archive.zip")
+        with zipfile.ZipFile(zip_path, "w"):
+            pass
+
+        missing_paths = [
+            self._mkpath("not_real_version.plist"),
+            os.path.join(zip_path, "nope.txt"),
+            self._mkpath("image.dmg", "darn.json"),
+        ]
+        for path in missing_paths:
             with self.subTest(path=path):
-                with self.assertRaisesRegex(
-                    ProcessorError,
-                    f"File.*{self.processor.env['input_plist_path']}.*not found",
-                ):
-                    self.processor.process()
+                self.processor.env["input_plist_path"] = path
+                if self.processor.parsePathForDMG(path)[1]:
+
+                    def mount_image(dmg_path):
+                        self.processor.mounts[dmg_path] = self.tmp_dir.name
+                        return self.tmp_dir.name
+
+                    with (
+                        patch.object(self.processor, "mount", side_effect=mount_image),
+                        patch.object(self.processor, "unmount"),
+                    ):
+                        with self.assertRaises(ProcessorError) as context:
+                            self.processor.process()
+                else:
+                    with self.assertRaises(ProcessorError) as context:
+                        self.processor.process()
+
+                self.assertIn(path, str(context.exception))
 
 
 if __name__ == "__main__":

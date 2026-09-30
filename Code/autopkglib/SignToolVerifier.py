@@ -11,19 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for SignToolVerifier class"""
 
 import os
 import os.path
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from autopkglib import Processor, ProcessorError
+from autopkglib import Processor, ProcessorError, log_err
 
 __all__ = ["SignToolVerifier"]
 
 
-def signtool_default_path() -> Optional[str]:
+def signtool_default_path() -> str | None:
     """Looks for signtool in a few well known paths. Deliberately naive."""
     for program_files_candidate, arch in (
         (os.environ.get("ProgramFiles(x86)"), "x64"),
@@ -53,11 +54,13 @@ class SignToolVerifier(Processor):
     """Verifies an authenticode signed installer using the Microsoft SDK
     signtool executable."""
 
-    EXTENSIONS: List[str] = [".exe", ".msi"]
+    description = __doc__
+    lifecycle = {"introduced": "2.3"}
+    EXTENSIONS: list[str] = [".exe", ".msi"]
 
     # TODO: How much of this is needed to act as a drop-in replacement in an
     # override recipe??
-    input_variables: Dict[str, Any] = {
+    input_variables: dict[str, Any] = {
         "DISABLE_CODE_SIGNATURE_VERIFICATION": {
             "required": False,
             "description": ("Prevents this processor from running."),
@@ -85,20 +88,24 @@ class SignToolVerifier(Processor):
             "default": None,
         },
     }
-    output_variables: Dict[str, Any] = {}
-
-    description: str = __doc__
+    output_variables: dict[str, Any] = {}
 
     def codesign_verify(
         self,
-        signtool_path: str,
+        signtool_path: str | None,
         path: str,
-        additional_arguments: Optional[List[str]] = None,
+        additional_arguments: list[str] | None = None,
     ) -> bool:
         """
         Runs 'signtool.exe /pa <path>'. Returns True if signtool exited with 0
         and False otherwise.
         """
+        if not isinstance(signtool_path, str) or not signtool_path:
+            raise ProcessorError(
+                "No signtool_path configured. Set signtool_path to the path "
+                "to signtool.exe."
+            )
+
         if not additional_arguments:
             additional_arguments = []
 
@@ -113,14 +120,19 @@ class SignToolVerifier(Processor):
 
         # Run signtool with stderr redirected to stdout to ensure that all output
         # is always captured from the tool.
-        proc = subprocess.Popen(
-            process,
-            stdin=None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        (output, _) = proc.communicate()
+        try:
+            proc = subprocess.Popen(
+                process,
+                stdin=None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            output, _ = proc.communicate()
+        except OSError as err:
+            raise ProcessorError(
+                f"signtool execution failed with error code {err.errno}: {err.strerror}"
+            )
 
         for line in output.replace("\n\n", "\n").replace("\n\n\n", "\n\n").splitlines():
             self.output(line)
@@ -136,14 +148,14 @@ class SignToolVerifier(Processor):
 
         return proc.returncode == 0
 
-    def main(self):
+    def main(self) -> None:
         if self.env.get("DISABLE_CODE_SIGNATURE_VERIFICATION"):
-            self.output("Authenticode verification disabled for this recipe run.")
+            log_err("WARNING: Authenticode verification disabled for this recipe run.")
             return
 
         input_path = self.env["input_path"]
-        signtool_path = self.env["signtool_path"]
-        additional_arguments = self.env["additional_arguments"]
+        signtool_path = self.env.get("signtool_path")
+        additional_arguments = self.env.get("additional_arguments")
 
         self.codesign_verify(
             signtool_path,

@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for PlistEditor class"""
 
 import plistlib
@@ -27,12 +28,12 @@ class PlistEditor(Processor):
     plist."""
 
     description = __doc__
+    lifecycle = {"introduced": "0.1.0"}
     input_variables = {
         "input_plist_path": {
             "required": False,
             "description": (
-                "File path to a plist; empty or undefined to start with "
-                "an empty plist."
+                "File path to a plist; empty or undefined to start with an empty plist."
             ),
         },
         "output_plist_path": {
@@ -42,22 +43,18 @@ class PlistEditor(Processor):
         "plist_data": {
             "required": True,
             "description": (
-                "A dictionary of data to be merged with the data from the "
-                "input plist."
+                "A dictionary of data to be merged with the data from the input plist."
             ),
         },
     }
     output_variables = {}
-
-    __doc__ = description
 
     def read_plist(self, pathname):
         """reads a plist from pathname"""
         if not pathname:
             return {}
         try:
-            with open(pathname, "rb") as f:
-                return plistlib.load(f)
+            return self.load_plist_from_file(pathname)
         except Exception as err:
             raise ProcessorError(f"Could not read {pathname}: {err}")
 
@@ -69,7 +66,7 @@ class PlistEditor(Processor):
         except Exception as err:
             raise ProcessorError(f"Could not write {pathname}: {err}")
 
-    def main(self):
+    def main(self) -> None:
         # read original plist (or empty plist)
         working_plist = self.read_plist(self.env.get("input_plist_path"))
 

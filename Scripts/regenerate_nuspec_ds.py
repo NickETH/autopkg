@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """
 Regenerates the NuSpec XML schema Python wrapper module from upstream source.
 
 Downloads the latest NuSpec XSD from the GitHub NuGet/NuGet.Client Git repository,
 and creates a wrapper library using the `generateDS` utility.
 """
+
 import os
 import sys
 
@@ -31,7 +33,6 @@ sys.path.insert(0, AUTOPKG_TOP)
 import ssl
 import subprocess
 from argparse import ArgumentParser
-from typing import List
 from urllib.request import urlopen
 
 from autopkglib import find_binary
@@ -48,16 +49,15 @@ SCHEMA_XMLNS: bytes = b"http://schemas.microsoft.com/packaging/2015/06/nuspec.xs
 
 def get_schema_source(url: str, xmlns: bytes = SCHEMA_XMLNS) -> bytes:
     """Fetch the latest XML schema and replace `{0}` with the given XML namespace."""
-    context = ssl.SSLContext()
-    context.verify_mode = ssl.CERT_REQUIRED
-    context.check_hostname = True
-    context.load_default_certs()
+    context = ssl.create_default_context()
 
-    with urlopen(SCHEMA_SOURCE_URL, context=context) as res:
+    with urlopen(url, context=context) as res:
         return res.read().replace(b"{0}", xmlns)
 
 
-def run_generateds(generateds_binary: str, output_path: str, schema_source: bytes):
+def run_generateds(
+    generateds_binary: str, output_path: str, schema_source: bytes
+) -> int:
     """Generate python wrapper library around the provided XML schema."""
     call_res = subprocess.run(
         [
@@ -79,7 +79,7 @@ def run_generateds(generateds_binary: str, output_path: str, schema_source: byte
     return call_res.returncode
 
 
-def main(input_args: List[str]) -> int:
+def main(input_args: list[str]) -> int:
     parser = ArgumentParser(
         description="Regenerate the python wrapper library around the nuget xml schema."
     )

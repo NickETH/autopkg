@@ -13,9 +13,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """See docstring for PackageRequired class"""
 
 import os
+from typing import Any
 
 from autopkglib import Processor, ProcessorError
 
@@ -23,14 +25,14 @@ __all__ = ["PackageRequired"]
 
 
 class PackageRequired(Processor):
-    """Raises a ProcessorError if the PKG variable doesn't exist.
+    """Raises a ProcessorError if the PKG variable doesn't exist."""
 
-    Requires version 0.5.1."""
+    description = __doc__
+    lifecycle = {"introduced": "0.5.1"}
+    input_variables: dict[str, Any] = {}
+    output_variables: dict[str, Any] = {}
 
-    input_variables = {}
-    output_variables = {}
-
-    def main(self):
+    def main(self) -> None:
         pkg = self.env.get("PKG", None)
 
         if not pkg:
@@ -43,3 +45,8 @@ class PackageRequired(Processor):
 
         if not os.path.exists(pkg):
             raise ProcessorError(f"Path to package or disk image does not exist: {pkg}")
+
+
+if __name__ == "__main__":
+    PROCESSOR = PackageRequired()
+    PROCESSOR.execute_shell()
